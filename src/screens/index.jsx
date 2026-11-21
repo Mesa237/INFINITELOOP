@@ -387,11 +387,14 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
     setBusyAction(match.id + ':' + nextStatus);
     setError('');
     try {
-      const { error: updateError } = await supabase
+      const { data, error: updateError } = await supabase
         .from('matches')
         .update({ status: nextStatus })
-        .eq('id', match.id);
+        .eq('id', match.id)
+        .select('id')
+        .maybeSingle();
       if (updateError) throw updateError;
+      if (!data) throw new Error('This offer was not updated. Refresh and try again.');
       setReloadKey((key) => key + 1);
     } catch (actionError) {
       setError(
@@ -580,6 +583,13 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
                     />
                   </>
                 )}
+              {(myOffer?.status === 'rejected' || myOffer?.status === 'cancelled') && (
+                <Text style={s.meta}>
+                  {myOffer.status === 'rejected'
+                    ? 'Your offer was declined.'
+                    : 'Your offer is closed.'}
+                </Text>
+              )}
 
               {pendingOffers.map((offer) => (
                 <View key={offer.id} style={[s.card, { backgroundColor: C.cream }]}>
