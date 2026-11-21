@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '../../lib/supabase';
 // Change the palette here to restyle the whole screen.
 const C = {
   ink: '#20211C',
@@ -867,6 +868,14 @@ export default function CoucouSocial() {
                       Blocked members: {blocked.length} · Reports sent:{' '}
                       {reports.length}
                     </Text>
+                    <Button
+                      soft
+                      label="Sign out"
+                      onPress={async () => {
+                        const { error } = await supabase.auth.signOut();
+                        if (error) setNotice(error.message);
+                      }}
+                    />
                   </>
                 )}
                 {author && notice && (
