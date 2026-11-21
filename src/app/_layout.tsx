@@ -9,6 +9,7 @@ import AppTabs from '@/components/app-tabs';
 import AuthScreen from '@/screens/auth';
 import { useCoucouTheme } from '@/theme/coucou';
 import { supabase } from '../../lib/supabase';
+import { getActivePortal, validatePortalAccess } from '../../lib/portal';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -16,22 +17,49 @@ export default function TabLayout() {
   const { C, scheme } = useCoucouTheme();
   const [session, setSession] = useState<Session | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+    async function handleSessionValidation(candidateSession: Session | null) {
+      if (!candidateSession?.user) {
+        if (mounted) {
+          setSession(null);
+          setCheckingSession(false);
+        }
+        return;
+      }
+
+      const activePortal = getActivePortal();
+      const validation = await validatePortalAccess(candidateSession.user.id, activePortal);
+
+      if (!validation.allowed) {
+        // Enforce access control: disallow entry and sign out immediately
+        await supabase.auth.signOut();
+        if (mounted) {
+          setSession(null);
+          setAuthError(validation.errorMessage || 'Access denied for this portal.');
+          setCheckingSession(false);
+        }
+        return;
+      }
+
       if (mounted) {
-        setSession(currentSession);
+        setAuthError(null);
+        setSession(candidateSession);
         setCheckingSession(false);
       }
+    }
+
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      handleSessionValidation(currentSession);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setCheckingSession(false);
+      handleSessionValidation(nextSession);
     });
 
     return () => {
@@ -50,7 +78,7 @@ export default function TabLayout() {
       ) : session ? (
         <AppTabs />
       ) : (
-        <AuthScreen />
+        <AuthScreen initialError={authError} onClearError={() => setAuthError(null)} />
       )}
     </ThemeProvider>
   );
