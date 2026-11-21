@@ -5,11 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CouCouMTL · Around the block</title>
 <meta name="description" content="CouCouMTL connects newcomers, elders and neighbours in Montréal for everyday help, language exchange and local tips.">
+<script>
+  (function(){var t;try{t=localStorage.getItem('coucou-theme')}catch(e){}
+   if(!t)t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+   document.documentElement.setAttribute('data-theme',t);})();
+</script>
 <style>
   :root{
     --ink:#20211C; --yellow:#FFDF46; --sun:#F3BB25; --lilac:#D8C2F4; --soft:#F1E8FE;
     --cream:#FFFDF4; --white:#FFFFFF; --muted:#55574E; --line:#DEDED1; --tabs:#EEEEE4;
+    --nav:rgba(255,253,244,.9); color-scheme:light;
   }
+  html[data-theme="dark"]{
+    --ink:#F3F1E4; --cream:#15160F; --white:#22231C; --muted:#BDBEAF; --line:#3A3B32;
+    --tabs:#2C2D25; --soft:#3A3150; --nav:rgba(21,22,15,.9); color-scheme:dark;
+  }
+  .hero,.phone,.final,.note,.icon,.mono,.svc .code,.band,.svc.urgent,.step::before{
+    --ink:#20211C; --cream:#FFFDF4; --white:#FFFFFF; --muted:#55574E; --line:#DEDED1;
+    --tabs:#EEEEE4; --soft:#F1E8FE;
+  }
+  .hero,.final,.note,.svc .code,.mono{color:#20211C}
+  html[data-theme="dark"] .band,html[data-theme="dark"] .svc.urgent{background:#2C2D25;border-color:#2C2D25}
+  html[data-theme="dark"] .step::before{background:var(--yellow);color:#20211C}
+  .theme{width:44px;height:44px;border-radius:18px;border:1px solid var(--line);background:var(--white);color:var(--ink);font-size:18px;cursor:pointer;display:grid;place-items:center}
+  .theme:hover{border-color:var(--ink)}
+  .navr{display:flex;gap:8px;align-items:center}
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
   body{font-family:system-ui,-apple-system,"SF Pro Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -18,16 +38,17 @@
   .wrap{max-width:1120px;margin:0 auto;padding:0 20px}
 
   /* nav */
-  nav{position:sticky;top:0;z-index:10;background:rgba(255,253,244,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  nav{position:sticky;top:0;z-index:10;background:var(--nav);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
   nav .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:68px;flex-wrap:wrap}
   .brand{font-size:23px;font-weight:900;letter-spacing:-1px;text-decoration:none}
   .links{display:flex;gap:4px;padding:4px;border-radius:26px;background:var(--tabs)}
   .links a{text-decoration:none;font-size:13px;font-weight:700;padding:10px 14px;border-radius:22px}
-  .links a:hover{background:var(--ink);color:var(--white)}
+  .links a:hover{background:var(--ink);color:var(--cream)}
 
   .btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:12px 18px;border-radius:18px;
-       background:var(--ink);color:var(--white);font-weight:700;font-size:15px;text-decoration:none;border:0;cursor:pointer}
+       background:var(--ink);color:var(--cream);font-weight:700;font-size:15px;text-decoration:none;border:0;cursor:pointer}
   .btn.soft{background:var(--soft);color:var(--ink)}
+  .hero .btn.soft,.final .btn.soft{background:#F1E8FE;color:#20211C}
   .btn:hover{opacity:.8}
 
   .eyebrow{font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase}
@@ -143,10 +164,14 @@
     <div class="links">
       <a href="#features">Features</a>
       <a href="#how">How it works</a>
+      <a href="#model">Model</a>
       <a href="#partners">Partners</a>
       <a href="#services">Public services</a>
     </div>
-    <a class="btn" href="#get">Get the app</a>
+    <div class="navr">
+      <button class="theme" id="theme" type="button" aria-label="Switch to dark mode">☾</button>
+      <a class="btn" href="#get">Get the app</a>
+    </div>
   </div>
 </nav>
 
@@ -171,7 +196,7 @@
         <div class="mini-tabs"><i class="on">Feed</i><i>Discover</i><i>Help</i></div>
         <div class="mini-card">
           <div class="who"><span class="av">NA</span><b>Noor · Newcomer</b></div>
-          <p>Can someone help me fill out my RAMQ card form? Happy to trade Arabic lessons ☕</p>
+          <p>Can someone help me fill out my RAMQ card form? Happy to help in return ☕</p>
           <div class="row"><span class="mini-btn">Offer help</span><span class="mini-btn soft">Message</span></div>
         </div>
         <div class="mini-card">
@@ -195,7 +220,7 @@
       <p class="lead">Built for the people who need a neighbour most: newcomers finding their feet and elders who'd love a hand or a chat.</p>
     </div>
     <div class="grid g3">
-      <div class="card"><div class="icon y">🤝</div><h3>Community help board</h3><p>Post a request: a form to fill, a ride to the clinic, groceries upstairs. A neighbour nearby offers to help.</p></div>
+      <div class="card"><div class="icon y">🤝</div><h3>Ask in any language</h3><p>Describe what you need in your own words, in any language. Our assistant turns it into a clear post in English or French, and you check it before it goes live.</p></div>
       <div class="card"><div class="icon">💬</div><h3>Language exchange</h3><p>Practise French, share your language. Join conversation circles and language parties around Montréal.</p></div>
       <div class="card"><div class="icon s">📍</div><h3>Find your community</h3><p>Filter groups by neighbourhood, language and need: newcomer support, senior networks, conversation circles.</p></div>
       <div class="card"><div class="icon s">⭐</div><h3>Honest ratings</h3><p>Rate every completed help. Anything under 4 stars needs a written reason, so feedback stays fair and useful.</p></div>
@@ -212,8 +237,8 @@
     </div>
     <div class="grid g3 steps">
       <div class="step"><h3>Join &amp; agree</h3><p>Sign up as a newcomer, elder or helper and accept the community rules: respect, privacy, no abuse.</p></div>
-      <div class="step"><h3>Ask or offer</h3><p>Post what you need or browse open requests near you. Accept one and start chatting.</p></div>
-      <div class="step"><h3>Help &amp; rate</h3><p>Mark it complete and rate each other. Good neighbours build a trusted profile over time.</p></div>
+      <div class="step"><h3>Ask or offer</h3><p>Tell the assistant what you need in any language. It writes your post in English or French. Helpers nearby see it and offer a hand.</p></div>
+      <div class="step"><h3>Help &amp; rate</h3><p>Both confirm it's done and rate each other. Helpers earn verified volunteer hours and build a trusted profile.</p></div>
     </div>
   </section>
 
@@ -221,8 +246,24 @@
   <div class="band">
     <div><b>3</b><span>roles: newcomer, elder, helper, all on equal footing</span></div>
     <div><b>FR · EN · +</b><span>multilingual from day one, with French front and centre</span></div>
-    <div><b>&lt;4★</b><span>needs a written reason, keeping trust high and feedback real</span></div>
+    <div><b>0 $</b><span>to ask for help, ever. Organisations fund the platform.</span></div>
   </div>
+
+
+  <!-- BUSINESS MODEL -->
+  <section id="model" style="padding-top:0">
+    <div class="head">
+      <span class="eyebrow">Business model</span>
+      <h2>Free for everyone who needs help.</h2>
+      <p class="lead">Organisations pay for impact, and volunteers earn verified hours. Nobody ever pays to ask for help.</p>
+    </div>
+    <div class="grid g3">
+      <div class="card"><div class="icon y">💛</div><h3>Free for members</h3><p>Newcomers, seniors and students ask for help at no cost, always. No paywall between a person and a neighbour.</p></div>
+      <div class="card"><div class="icon">🏅</div><h3>Volunteers earn verified hours</h3><p>Every completed help, confirmed by both people and rated 4★ or more, adds verified hours and a certificate for CVs, scholarships and Canadian experience. Hours also become time credits to ask for help in return.</p></div>
+      <div class="card"><div class="icon s">🏛️</div><h3>Organisations pay for impact</h3><p>Universities, student housing, settlement agencies and the city license a dashboard: vetted volunteers, community events and impact reports.</p></div>
+    </div>
+    <p class="disclaimer">Fair play: rewards count only for help confirmed by both sides, from different people. Reports are reviewed by a moderator before they affect anyone's account. In-home help unlocks only after ID or partner verification.</p>
+  </section>
 
   <!-- PARTNERS -->
   <section id="partners">
@@ -295,6 +336,12 @@
       <div><h3>${s.name}</h3><p>${s.desc}</p></div>
       <div><div class="num">☎ ${s.phone}</div><div class="hrs">${s.hrs}</div></div>
     </a>`).join('');
+  const btn=document.getElementById('theme');
+  function paint(){const d=document.documentElement.getAttribute('data-theme')==='dark';
+    btn.textContent=d?'☀':'☾';btn.setAttribute('aria-label',d?'Switch to light mode':'Switch to dark mode');}
+  btn.addEventListener('click',()=>{const n=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
+    document.documentElement.setAttribute('data-theme',n);try{localStorage.setItem('coucou-theme',n)}catch(e){}paint();});
+  paint();
 </script>
 </body>
 </html>
