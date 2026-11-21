@@ -2,17 +2,8 @@
 // Public services section for CouCouMTL: same data as the showcase website.
 // Tapping a square opens the official page; tapping the number starts a call.
 import React from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-
-const C = {
-  ink: '#20211C',
-  yellow: '#FFDF46',
-  lilac: '#D8C2F4',
-  cream: '#FFFDF4',
-  white: '#FFFFFF',
-  muted: '#55574E',
-  line: '#DEDED1',
-};
+import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import { makeStyles } from '../theme/coucou';
 
 // Numbers and hours from official websites (Nov 2026). They can change.
 export const SERVICES = [
@@ -28,31 +19,33 @@ export const SERVICES = [
 ];
 
 function Square({ s }) {
-  const dark = s.urgent;
+  const st = useStyles();
+  const urgent = s.urgent;
   return (
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={`${s.name}, open official page`}
       onPress={() => Linking.openURL(s.url)}
-      style={({ pressed }) => [st.square, dark && st.dark, pressed && { opacity: 0.6 }]}
+      style={({ pressed }) => [st.square, urgent && st.urgent, pressed && { opacity: 0.6 }]}
     >
       <View style={st.top}>
-        <Text style={[st.code, dark && { backgroundColor: C.yellow }]}>{s.code}</Text>
-        <Text style={[st.arrow, dark && { color: C.cream }]}>↗</Text>
+        <Text style={[st.code, urgent && st.codeUrgent]}>{s.code}</Text>
+        <Text style={[st.arrow, urgent && st.onUrgent]}>↗</Text>
       </View>
       <View style={{ gap: 2 }}>
-        <Text style={[st.name, dark && { color: C.cream }]}>{s.name}</Text>
-        <Text style={[st.desc, dark && { color: '#BDBEAF' }]}>{s.desc}</Text>
+        <Text style={[st.name, urgent && st.onUrgent]}>{s.name}</Text>
+        <Text style={[st.desc, urgent && st.onUrgentMuted]}>{s.desc}</Text>
       </View>
       <Pressable accessibilityRole="button" accessibilityLabel={`Call ${s.name}`} onPress={() => Linking.openURL(`tel:${s.dial}`)}>
-        <Text style={[st.num, dark && { color: C.cream }]}>☎ {s.phone}</Text>
-        <Text style={[st.hrs, dark && { color: '#BDBEAF' }]}>{s.hrs}</Text>
+        <Text style={[st.num, urgent && st.onUrgent]}>☎ {s.phone}</Text>
+        <Text style={[st.hrs, urgent && st.onUrgentMuted]}>{s.hrs}</Text>
       </Pressable>
     </Pressable>
   );
 }
 
 export default function PublicServices() {
+  const st = useStyles();
   return (
     <ScrollView contentContainerStyle={st.page}>
       <View style={st.hero}>
@@ -73,31 +66,33 @@ export default function PublicServices() {
   );
 }
 
-const st = StyleSheet.create({
-  page: { padding: 16, gap: 14, backgroundColor: C.cream },
+const useStyles = makeStyles((C) => ({
+  page: { padding: 16, gap: 14, backgroundColor: C.page },
   hero: { backgroundColor: C.yellow, borderRadius: 28, padding: 22, overflow: 'hidden', gap: 6 },
-  mark: { position: 'absolute', top: -38, right: -15, fontSize: 158, color: '#F3BB25' },
-  eyebrow: { color: C.ink, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
-  title: { color: C.ink, fontSize: 34, lineHeight: 36, fontWeight: '900', letterSpacing: -1.5 },
-  sub: { color: C.ink, fontSize: 15, lineHeight: 21 },
+  mark: { position: 'absolute', top: -38, right: -15, fontSize: 158, color: C.sunMark },
+  eyebrow: { color: C.onAccent, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+  title: { color: C.onAccent, fontSize: 34, lineHeight: 36, fontWeight: '900', letterSpacing: -1.5 },
+  sub: { color: C.onAccent, fontSize: 15, lineHeight: 21 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   square: {
     width: '48%',
     flexGrow: 1,
     minHeight: 190,
-    backgroundColor: C.white,
+    backgroundColor: C.card,
     borderWidth: 1,
-    borderColor: C.line,
+    borderColor: C.border,
     borderRadius: 24,
     padding: 14,
     justifyContent: 'space-between',
     gap: 8,
   },
-  dark: { backgroundColor: C.ink, borderColor: C.ink },
+  urgent: { backgroundColor: C.invertBg, borderColor: C.invertBg },
+  onUrgent: { color: C.invertText },
+  onUrgentMuted: { color: C.invertMuted },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   code: {
     backgroundColor: C.lilac,
-    color: C.ink,
+    color: C.onAccent,
     fontWeight: '900',
     fontSize: 12,
     paddingHorizontal: 9,
@@ -105,10 +100,11 @@ const st = StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
   },
-  arrow: { fontSize: 18, fontWeight: '900', color: C.ink },
-  name: { fontSize: 16, fontWeight: '800', color: C.ink, letterSpacing: -0.3 },
+  codeUrgent: { backgroundColor: C.yellow },
+  arrow: { fontSize: 18, fontWeight: '900', color: C.text },
+  name: { fontSize: 16, fontWeight: '800', color: C.text, letterSpacing: -0.3 },
   desc: { fontSize: 12, color: C.muted, lineHeight: 16 },
-  num: { fontSize: 14, fontWeight: '900', color: C.ink },
+  num: { fontSize: 14, fontWeight: '900', color: C.text },
   hrs: { fontSize: 11, fontWeight: '700', color: C.muted },
   note: { fontSize: 12, color: C.muted, lineHeight: 17, marginBottom: 24 },
-});
+}));

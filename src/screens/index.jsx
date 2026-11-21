@@ -5,7 +5,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -13,15 +12,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import PublicServices from './public-services';
-// Change the palette here to restyle the whole screen.
-const C = {
-  ink: '#20211C',
-  yellow: '#FFDF46',
-  lilac: '#D8C2F4',
-  cream: '#FFFDF4',
-  white: '#FFFFFF',
-  muted: '#55574E',
-};
+import {
+  makeStyles,
+  setThemeMode,
+  THEME_MODES,
+  useCoucouTheme,
+} from '../theme/coucou';
 const areas = ['Downtown', 'Le Plateau', 'Verdun'];
 const people = [
   {
@@ -53,6 +49,7 @@ const people = [
   },
 ];
 function Button({ label, onPress, soft = false, disabled = false }) {
+  const s = useS();
   return (
     <Pressable
       accessibilityRole="button"
@@ -65,7 +62,7 @@ function Button({ label, onPress, soft = false, disabled = false }) {
         (pressed || disabled) && { opacity: 0.55 },
       ]}
     >
-      <Text style={[s.buttonText, soft && { color: C.ink }]}>{label}</Text>
+      <Text style={[s.buttonText, soft && s.softText]}>{label}</Text>
     </Pressable>
   );
 }
@@ -107,6 +104,7 @@ const RULES =
   'Treat other members with respect, protect their privacy, and report abuse.';
 const members = ['', 'You', 'Camille', 'Noor', 'Lou'];
 function Choices({ title, values, labels, value, change }) {
+  const s = useS();
   return (
     <View style={{ gap: 6 }}>
       <Text style={s.bold}>{title}</Text>
@@ -124,6 +122,8 @@ function Choices({ title, values, labels, value, change }) {
   );
 }
 function Communities() {
+  const { C } = useCoucouTheme();
+  const s = useS();
   const [city, setCity] = useState('');
   const [language, setLanguage] = useState('');
   const [category, setCategory] = useState('');
@@ -134,7 +134,7 @@ function Communities() {
       (!category || g.category === category),
   );
   return (
-    <View style={[s.card, { backgroundColor: C.cream }]}>
+    <View style={[s.card, { backgroundColor: C.page }]}>
       <Text style={s.section}>Find a community</Text>
       <Choices
         title="City"
@@ -178,6 +178,8 @@ function Communities() {
   );
 }
 function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
+  const { C } = useCoucouTheme();
+  const s = useS();
   const [userId, setUserId] = useState(null);
   const [requests, setRequests] = useState([]);
   const [requesterNames, setRequesterNames] = useState({});
@@ -467,6 +469,7 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
         <View style={s.card}>
           <TextInput
             style={s.input}
+            placeholderTextColor={C.placeholder}
             placeholder="Request title"
             value={title}
             onChangeText={setTitle}
@@ -499,6 +502,7 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
           <TextInput
             style={s.input}
             multiline
+            placeholderTextColor={C.placeholder}
             placeholder="What help do you need? (at least 10 characters)"
             value={description}
             onChangeText={setDescription}
@@ -517,7 +521,7 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
         </View>
       )}
       {!!error && (
-        <Text accessibilityLiveRegion="polite" style={{ color: '#A43C32' }}>
+        <Text accessibilityLiveRegion="polite" style={{ color: C.error }}>
           {error}
         </Text>
       )}
@@ -593,7 +597,7 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
               )}
 
               {pendingOffers.map((offer) => (
-                <View key={offer.id} style={[s.card, { backgroundColor: C.cream }]}>
+                <View key={offer.id} style={[s.card, { backgroundColor: C.page }]}>
                   <Text style={s.bold}>
                     Offer from {requesterNames[offer.volunteer_id] || 'a neighbour'}
                     {ratingsByProfile[offer.volunteer_id]?.review_count > 0
@@ -623,7 +627,7 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
               ))}
 
               {acceptedMatch && (
-                <View style={[s.card, { backgroundColor: C.cream }]}>
+                <View style={[s.card, { backgroundColor: C.page }]}>
                   <Text style={s.bold}>
                     Volunteer: {requesterNames[acceptedMatch.volunteer_id] || 'Neighbour'}
                   </Text>
@@ -673,7 +677,8 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
                           <TextInput
                             style={s.input}
                             multiline
-                            placeholder={
+                            placeholderTextColor={C.placeholder}
+            placeholder={
                               Number(stars) > 0 && Number(stars) < 4
                                 ? 'Reason required for 1–3 stars'
                                 : 'Comment (optional)'
@@ -734,8 +739,8 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
     </ScrollView>
   );
 }
-const s = StyleSheet.create({
-  page: { flex: 1, backgroundColor: C.cream },
+const useS = makeStyles((C) => ({
+  page: { flex: 1, backgroundColor: C.page },
   content: {
     width: '100%',
     maxWidth: 660,
@@ -751,7 +756,7 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
   },
-  brand: { fontSize: 23, letterSpacing: -1, fontWeight: '900', color: C.ink },
+  brand: { fontSize: 23, letterSpacing: -1, fontWeight: '900', color: C.text },
   pill: {
     backgroundColor: C.lilac,
     borderRadius: 24,
@@ -770,11 +775,11 @@ const s = StyleSheet.create({
     top: -38,
     right: -15,
     fontSize: 158,
-    color: '#F3BB25',
+    color: C.sunMark,
   },
-  eyebrow: { color: C.ink, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+  eyebrow: { color: C.onAccent, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
   heroTitle: {
-    color: C.ink,
+    color: C.onAccent,
     fontSize: 44,
     lineHeight: 46,
     fontWeight: '900',
@@ -784,7 +789,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     padding: 4,
     borderRadius: 26,
-    backgroundColor: '#EEEEE4',
+    backgroundColor: C.track,
   },
   tab: {
     flex: 1,
@@ -793,16 +798,16 @@ const s = StyleSheet.create({
     minHeight: 44,
     borderRadius: 22,
   },
-  active: { backgroundColor: C.ink },
+  active: { backgroundColor: C.primary },
   tabLabel: {
-    color: C.ink,
+    color: C.text,
     textAlign: 'center',
     fontSize: 13,
     fontWeight: '700',
   },
   section: {
     fontSize: 23,
-    color: C.ink,
+    color: C.text,
     fontWeight: '800',
     letterSpacing: -0.8,
   },
@@ -810,22 +815,22 @@ const s = StyleSheet.create({
     borderRadius: 24,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#DEDED1',
+    borderColor: C.border,
     gap: 10,
-    backgroundColor: C.white,
+    backgroundColor: C.card,
   },
-  title: { fontSize: 30, color: C.ink, fontWeight: '900', letterSpacing: -1 },
+  title: { fontSize: 30, color: C.text, fontWeight: '900', letterSpacing: -1 },
   cardTitle: {
     fontSize: 22,
-    color: C.ink,
+    color: C.text,
     fontWeight: '800',
     letterSpacing: -0.6,
   },
   body: { color: C.muted, fontSize: 16, lineHeight: 23 },
   meta: { color: C.muted, fontWeight: '700', fontSize: 13 },
-  bold: { color: C.ink, fontWeight: '700' },
+  bold: { color: C.text, fontWeight: '700' },
   button: {
-    backgroundColor: C.ink,
+    backgroundColor: C.primary,
     borderRadius: 18,
     minHeight: 44,
     paddingVertical: 12,
@@ -833,8 +838,9 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  soft: { backgroundColor: '#F1E8FE' },
-  buttonText: { color: C.white, fontSize: 15, fontWeight: '700' },
+  soft: { backgroundColor: C.softBg },
+  softText: { color: C.softText },
+  buttonText: { color: C.onPrimary, fontSize: 15, fontWeight: '700' },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
   portrait: {
     backgroundColor: C.lilac,
@@ -848,7 +854,7 @@ const s = StyleSheet.create({
     position: 'absolute',
     width: '130%',
     height: 42,
-    backgroundColor: C.ink,
+    backgroundColor: C.onAccent,
     transform: [{ rotate: '-16deg' }],
   },
   sun: {
@@ -863,20 +869,20 @@ const s = StyleSheet.create({
     fontWeight: '900',
     fontSize: 45,
     letterSpacing: -3,
-    color: C.ink,
+    color: C.onAccent,
   },
   stamp: {
     position: 'absolute',
     bottom: 10,
     left: 10,
-    backgroundColor: C.cream,
-    color: C.ink,
+    backgroundColor: C.page,
+    color: C.text,
     padding: 6,
     fontWeight: '700',
   },
   scrim: {
     flex: 1,
-    backgroundColor: 'rgba(25,25,18,0.55)',
+    backgroundColor: C.scrim,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
@@ -885,7 +891,7 @@ const s = StyleSheet.create({
     width: '100%',
     maxWidth: 460,
     maxHeight: '90%',
-    backgroundColor: C.cream,
+    backgroundColor: C.page,
     borderTopWidth: 8,
     borderTopColor: C.yellow,
     borderRadius: 26,
@@ -893,10 +899,10 @@ const s = StyleSheet.create({
   },
   sheetBody: { padding: 20, gap: 13 },
   input: {
-    color: C.ink,
-    backgroundColor: C.white,
+    color: C.text,
+    backgroundColor: C.inputBg,
     borderWidth: 1,
-    borderColor: '#BDBEAF',
+    borderColor: C.inputBorder,
     padding: 13,
     borderRadius: 14,
     fontSize: 16,
@@ -909,7 +915,7 @@ const s = StyleSheet.create({
     backgroundColor: C.yellow,
     borderRadius: 12,
   },
-});
+}));
 const initialPosts = [
   {
     id: 1,
@@ -942,6 +948,9 @@ const initialPosts = [
 const matches = (query, ...values) =>
   values.join(' ').toLowerCase().includes(query.trim().toLowerCase());
 export default function CoucouSocial() {
+  const { C, mode: themeMode } = useCoucouTheme();
+  const s = useS();
+  const social = useSocial();
   const [tab, setTab] = useState('Feed');
   const [trail, setTrail] = useState([]);
   const detail = trail[trail.length - 1];
@@ -1151,7 +1160,7 @@ export default function CoucouSocial() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={social.chatHeading}>
-            <Text style={s.section}>{activeChat}</Text>
+            <Text style={[s.section, { color: C.onAccent }]}>{activeChat}</Text>
             <Button
               soft
               label="View profile"
@@ -1170,7 +1179,7 @@ export default function CoucouSocial() {
             )}
             {(threads[activeChat] ?? []).map((m) => (
               <View key={m.id} style={[social.bubble, m.own && social.mine]}>
-                <Text style={s.body}>{m.text}</Text>
+                <Text style={[s.body, social.bubbleText]}>{m.text}</Text>
               </View>
             ))}
           </ScrollView>
@@ -1179,7 +1188,8 @@ export default function CoucouSocial() {
               accessibilityLabel="Message"
               style={[s.input, { flex: 1 }]}
               value={chatDrafts[activeChat] ?? ''}
-              placeholder="Write a message…"
+              placeholderTextColor={C.placeholder}
+            placeholder="Write a message…"
               onChangeText={(t) =>
                 setChatDrafts((prev) => ({ ...prev, [activeChat]: t }))
               }
@@ -1274,6 +1284,13 @@ export default function CoucouSocial() {
                   </View>
                 ) : (
                   <>
+                    <Choices
+                      title="Appearance"
+                      values={THEME_MODES}
+                      labels={['Light', 'Dark', 'Auto']}
+                      value={themeMode}
+                      change={setThemeMode}
+                    />
                     <Button
                       soft
                       label="Community rules"
@@ -1339,7 +1356,8 @@ export default function CoucouSocial() {
                 <TextInput
                   accessibilityLabel="Search"
                   style={s.input}
-                  placeholder="Search people, interests or posts"
+                  placeholderTextColor={C.placeholder}
+            placeholder="Search people, interests or posts"
                   value={query}
                   onChangeText={setQuery}
                 />
@@ -1403,7 +1421,7 @@ export default function CoucouSocial() {
               onPress={() => setTab(t)}
               style={[s.tab, t === tab && s.active]}
             >
-              <Text style={[s.tabLabel, t === tab && { color: C.white }]}>
+              <Text style={[s.tabLabel, t === tab && { color: C.onPrimary }]}>
                 {t}
               </Text>
             </Pressable>
@@ -1461,7 +1479,8 @@ export default function CoucouSocial() {
                     accessibilityLabel="Post text"
                     multiline
                     style={s.input}
-                    placeholder="What’s happening nearby?"
+                    placeholderTextColor={C.placeholder}
+            placeholder="What’s happening nearby?"
                     value={postText}
                     onChangeText={setPostText}
                     maxLength={1200}
@@ -1521,7 +1540,8 @@ export default function CoucouSocial() {
                   <TextInput
                     style={s.input}
                     multiline
-                    placeholder="Reason for report"
+                    placeholderTextColor={C.placeholder}
+            placeholder="Reason for report"
                     value={reportReason}
                     onChangeText={setReportReason}
                     maxLength={1000}
@@ -1615,7 +1635,7 @@ export default function CoucouSocial() {
     </SafeAreaView>
   );
 }
-const social = StyleSheet.create({
+const useSocial = makeStyles((C) => ({
   top: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1627,8 +1647,8 @@ const social = StyleSheet.create({
     flexDirection: 'row',
     padding: 6,
     borderTopWidth: 1,
-    borderColor: '#DDDCD0',
-    backgroundColor: C.white,
+    borderColor: C.border,
+    backgroundColor: C.card,
   },
   chatHeading: {
     flexDirection: 'row',
@@ -1645,5 +1665,6 @@ const social = StyleSheet.create({
     maxWidth: '83%',
   },
   mine: { alignSelf: 'flex-end', backgroundColor: C.yellow },
+  bubbleText: { color: C.onAccent },
   composer: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 },
-});
+}));

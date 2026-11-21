@@ -5,26 +5,17 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
-
-const palette = {
-  ink: '#20211C',
-  yellow: '#FFDF46',
-  cream: '#FFFDF4',
-  white: '#FFFFFF',
-  muted: '#68695F',
-  border: '#E7E4D7',
-  error: '#A43C32',
-  success: '#37694A',
-};
+import { makeStyles, useCoucouTheme } from '../theme/coucou';
 
 export default function AuthScreen() {
+  const { C } = useCoucouTheme();
+  const styles = useStyles();
   const [mode, setMode] = useState('signin');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -149,7 +140,7 @@ export default function AuthScreen() {
                   autoComplete="name"
                   onChangeText={setName}
                   placeholder="How neighbours will know you"
-                  placeholderTextColor="#929287"
+                  placeholderTextColor={C.placeholder}
                   returnKeyType="next"
                   style={styles.input}
                   value={name}
@@ -166,7 +157,7 @@ export default function AuthScreen() {
                 keyboardType="email-address"
                 onChangeText={setEmail}
                 placeholder="you@example.com"
-                placeholderTextColor="#929287"
+                placeholderTextColor={C.placeholder}
                 returnKeyType="next"
                 style={styles.input}
                 textContentType="emailAddress"
@@ -183,7 +174,7 @@ export default function AuthScreen() {
                 onChangeText={setPassword}
                 onSubmitEditing={submit}
                 placeholder={isSignUp ? 'At least 6 characters' : 'Your password'}
-                placeholderTextColor="#929287"
+                placeholderTextColor={C.placeholder}
                 returnKeyType="go"
                 secureTextEntry
                 style={styles.input}
@@ -205,7 +196,7 @@ export default function AuthScreen() {
               style={({ pressed }) => [styles.submit, (pressed || busy) && styles.dimmed]}
             >
               {busy ? (
-                <ActivityIndicator color={palette.ink} />
+                <ActivityIndicator color={C.onAccent} />
               ) : (
                 <Text style={styles.submitText}>{isSignUp ? 'Join the neighbourhood' : 'Sign in'}</Text>
               )}
@@ -223,34 +214,34 @@ export default function AuthScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: palette.cream },
+const useStyles = makeStyles((C) => ({
+  safe: { flex: 1, backgroundColor: C.page },
   flex: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 28, width: '100%', maxWidth: 600, alignSelf: 'center' },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 32 },
-  sun: { width: 38, height: 38, borderRadius: 19, backgroundColor: palette.yellow, alignItems: 'center', justifyContent: 'center' },
-  sunGlyph: { color: palette.ink, fontSize: 22 },
-  brand: { color: palette.ink, fontSize: 19, fontWeight: '800', letterSpacing: -0.5 },
+  sun: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.yellow, alignItems: 'center', justifyContent: 'center' },
+  sunGlyph: { color: C.onAccent, fontSize: 22 },
+  brand: { color: C.text, fontSize: 19, fontWeight: '800', letterSpacing: -0.5 },
   brandAccent: { fontWeight: '500' },
   intro: { marginBottom: 25 },
-  kicker: { color: palette.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12 },
-  title: { color: palette.ink, fontSize: 34, fontWeight: '800', lineHeight: 39, letterSpacing: -1, maxWidth: 430 },
-  subtitle: { color: palette.muted, fontSize: 16, lineHeight: 24, marginTop: 12, maxWidth: 450 },
-  card: { backgroundColor: palette.white, borderColor: palette.border, borderWidth: 1, borderRadius: 22, padding: 20, shadowColor: '#322F21', shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 7 }, elevation: 2 },
-  switcher: { flexDirection: 'row', padding: 4, borderRadius: 14, backgroundColor: '#F4F2E9', marginBottom: 22 },
+  kicker: { color: C.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12 },
+  title: { color: C.text, fontSize: 34, fontWeight: '800', lineHeight: 39, letterSpacing: -1, maxWidth: 430 },
+  subtitle: { color: C.muted, fontSize: 16, lineHeight: 24, marginTop: 12, maxWidth: 450 },
+  card: { backgroundColor: C.card, borderColor: C.border, borderWidth: 1, borderRadius: 22, padding: 20, shadowColor: C.shadow, shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 7 }, elevation: 2 },
+  switcher: { flexDirection: 'row', padding: 4, borderRadius: 14, backgroundColor: C.track, marginBottom: 22 },
   switchOption: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 44, borderRadius: 11, paddingHorizontal: 8 },
-  switchSelected: { backgroundColor: palette.yellow },
-  switchText: { color: palette.muted, fontSize: 14, fontWeight: '700' },
-  switchTextSelected: { color: palette.ink },
+  switchSelected: { backgroundColor: C.yellow },
+  switchText: { color: C.muted, fontSize: 14, fontWeight: '700' },
+  switchTextSelected: { color: C.onAccent },
   fieldGroup: { marginBottom: 16 },
-  label: { color: palette.ink, fontSize: 14, fontWeight: '700', marginBottom: 7 },
-  input: { width: '100%', minHeight: 50, borderWidth: 1, borderColor: palette.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: palette.ink, backgroundColor: '#FFFEFA', fontSize: 15 },
+  label: { color: C.text, fontSize: 14, fontWeight: '700', marginBottom: 7 },
+  input: { width: '100%', minHeight: 50, borderWidth: 1, borderColor: C.inputBorder, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: C.text, backgroundColor: C.inputBg, fontSize: 15 },
   message: { fontSize: 13, lineHeight: 19, marginBottom: 14 },
-  error: { color: palette.error },
-  success: { color: palette.success },
-  submit: { minHeight: 52, borderRadius: 14, backgroundColor: palette.yellow, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, marginTop: 2 },
-  submitText: { color: palette.ink, fontSize: 15, fontWeight: '800' },
+  error: { color: C.error },
+  success: { color: C.success },
+  submit: { minHeight: 52, borderRadius: 14, backgroundColor: C.yellow, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, marginTop: 2 },
+  submitText: { color: C.onAccent, fontSize: 15, fontWeight: '800' },
   dimmed: { opacity: 0.6 },
-  privacy: { color: palette.muted, fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 16 },
-  footer: { color: palette.muted, fontSize: 13, textAlign: 'center', marginTop: 22 },
-});
+  privacy: { color: C.muted, fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 16 },
+  footer: { color: C.muted, fontSize: 13, textAlign: 'center', marginTop: 22 },
+}));

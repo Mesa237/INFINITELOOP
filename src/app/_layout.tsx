@@ -1,18 +1,19 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
 import AuthScreen from '@/screens/auth';
+import { useCoucouTheme } from '@/theme/coucou';
 import { supabase } from '../../lib/supabase';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { C, scheme } = useCoucouTheme();
   const [session, setSession] = useState<Session | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
 
@@ -40,11 +41,11 @@ export default function TabLayout() {
   }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       {checkingSession ? (
-        <View style={styles.loading}>
-          <ActivityIndicator color="#20211C" />
+        <View style={[styles.loading, { backgroundColor: C.page }]}>
+          <ActivityIndicator color={C.text} />
         </View>
       ) : session ? (
         <AppTabs />
@@ -56,5 +57,5 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFDF4' },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });
