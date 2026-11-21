@@ -251,7 +251,7 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   async function publishRequest() {
     const cleanTitle = title.trim();
     const cleanDescription = description.trim();
-    const neighborhood = (area || '').trim();
+    const neighborhood = (area || 'Montréal').trim();
 
     if (!userId || cleanTitle.length < 5 || cleanDescription.length < 10 || !neighborhood) {
       setError('Add a title, at least 10 characters of detail, and a neighbourhood.');
@@ -1232,22 +1232,28 @@ export default function CoucouSocial() {
                         }
                         setProfileSaving(true);
                         const nextBio = bioDraft.trim();
-                        const { error } = await supabase
-                          .from('profiles')
-                          .update({ bio: nextBio || null })
-                          .eq('id', currentUserId);
-                        setProfileSaving(false);
-                        if (error) {
-                          setNotice(error.message);
-                          return;
+                        try {
+                          const { error } = await supabase
+                            .from('profiles')
+                            .update({ bio: nextBio || null })
+                            .eq('id', currentUserId);
+                          if (error) throw error;
+                          setBio(nextBio);
+                          setCurrentProfile((profile) => ({
+                            ...profile,
+                            bio: nextBio || null,
+                          }));
+                          setNotice('Bio saved.');
+                          close();
+                        } catch (saveError) {
+                          setNotice(
+                            saveError instanceof Error
+                              ? saveError.message
+                              : 'Could not save your bio.',
+                          );
+                        } finally {
+                          setProfileSaving(false);
                         }
-                        setBio(nextBio);
-                        setCurrentProfile((profile) => ({
-                          ...profile,
-                          bio: nextBio || null,
-                        }));
-                        setNotice('Bio saved.');
-                        close();
                       }}
                     />
                   </>
