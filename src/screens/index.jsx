@@ -1,0 +1,1198 @@
+import React, { useRef, useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+// Change the palette here to restyle the whole screen.
+const C = {
+  ink: '#20211C',
+  yellow: '#FFDF46',
+  lilac: '#D8C2F4',
+  cream: '#FFFDF4',
+  white: '#FFFFFF',
+  muted: '#55574E',
+};
+const areas = ['Downtown', 'Le Plateau', 'Verdun'];
+const people = [
+  {
+    name: 'Camille',
+    initials: 'CM',
+    area: areas[1],
+    role: 'Local helper',
+    languages: 'French · English',
+    interest: 'Photo walks',
+    bio: 'I know a little street with painted staircases. Bring your camera and we can explore together.',
+  },
+  {
+    name: 'Noor',
+    initials: 'NA',
+    area: areas[0],
+    role: 'Newcomer',
+    languages: 'English · Arabic',
+    interest: 'Coffee walks',
+    bio: 'Just unpacked my last box. Looking for someone to try the cafés around Concordia with.',
+  },
+  {
+    name: 'Lou',
+    initials: 'LB',
+    area: areas[2],
+    role: 'Longtime local',
+    languages: 'French · English',
+    interest: 'Riverside walks',
+    bio: 'I walk along the river most mornings and would love some company.',
+  },
+];
+function Button({ label, onPress, soft = false, disabled = false }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      accessibilityState={{ disabled }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        s.button,
+        soft && s.soft,
+        (pressed || disabled) && { opacity: 0.55 },
+      ]}
+    >
+      <Text style={[s.buttonText, soft && { color: C.ink }]}>{label}</Text>
+    </Pressable>
+  );
+}
+const GROUPS = [
+  {
+    id: 1,
+    name: 'Montréal French Conversation Circle',
+    city: 'Montréal',
+    languages: ['fr', 'en'],
+    category: 'language_exchange',
+    description: 'Practise French with neighbours.',
+  },
+  {
+    id: 2,
+    name: 'Montréal Newcomer Welcome Group',
+    city: 'Montréal',
+    languages: ['en', 'fr', 'zh'],
+    category: 'newcomer_support',
+    description: 'Meet newcomers and exchange local tips.',
+  },
+  {
+    id: 3,
+    name: 'Montréal Senior Neighbour Network',
+    city: 'Montréal',
+    languages: ['fr', 'en'],
+    category: 'senior_support',
+    description: 'Social visits and everyday help.',
+  },
+  {
+    id: 4,
+    name: 'Québec City French Conversation Circle',
+    city: 'Québec City',
+    languages: ['fr', 'en'],
+    category: 'language_exchange',
+    description: 'Find a conversation partner in Québec City.',
+  },
+];
+const RULES =
+  'Treat other members with respect, protect their privacy, and report abuse.';
+const members = ['', 'You', 'Camille', 'Noor', 'Lou'];
+function Choices({ title, values, labels, value, change }) {
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={s.bold}>{title}</Text>
+      <View style={s.row}>
+        {values.map((v, i) => (
+          <Button
+            key={v}
+            label={labels[i]}
+            soft={v !== value}
+            onPress={() => change(v)}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+function Communities() {
+  const [city, setCity] = useState('');
+  const [language, setLanguage] = useState('');
+  const [category, setCategory] = useState('');
+  const groups = GROUPS.filter(
+    (g) =>
+      (!city || g.city === city) &&
+      (!language || g.languages.includes(language)) &&
+      (!category || g.category === category),
+  );
+  return (
+    <View style={[s.card, { backgroundColor: C.cream }]}>
+      <Text style={s.section}>Find a community</Text>
+      <Choices
+        title="City"
+        values={['', 'Montréal', 'Québec City']}
+        labels={['All cities', 'Montréal', 'Québec City']}
+        value={city}
+        change={setCity}
+      />
+      <Choices
+        title="Language"
+        values={['', 'en', 'fr', 'zh']}
+        labels={['Any language', 'English', 'French', 'Chinese']}
+        value={language}
+        change={setLanguage}
+      />
+      <Choices
+        title="Category"
+        values={['', 'language_exchange', 'newcomer_support', 'senior_support']}
+        labels={[
+          'All categories',
+          'Language exchange',
+          'Newcomer support',
+          'Senior support',
+        ]}
+        value={category}
+        change={setCategory}
+      />
+      {groups.map((g) => (
+        <View key={g.id} style={s.card}>
+          <Text style={s.cardTitle}>{g.name}</Text>
+          <Text style={s.meta}>
+            {g.city} · {g.languages.join(' / ').toUpperCase()}
+          </Text>
+          <Text style={s.body}>{g.description}</Text>
+        </View>
+      ))}
+      {!groups.length && (
+        <Text style={s.body}>No matching communities. Try another filter.</Text>
+      )}
+    </View>
+  );
+}
+function CommunityBoard({ blocked, agreements, agree }) {
+  const [actor, setActor] = useState(1);
+  const [requests, setRequests] = useState([
+    {
+      id: 1,
+      requesterId: 3,
+      volunteerId: null,
+      title: 'My first métro trip',
+      category: 'Transit',
+      description:
+        'Could someone show me how to buy a ticket at Guy–Concordia?',
+      status: 'open',
+    },
+  ]);
+  const next = useRef(2);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('Everyday help');
+  const [editing, setEditing] = useState(false);
+  const [rating, setRating] = useState(null);
+  const [stars, setStars] = useState('');
+  const [reason, setReason] = useState('');
+  const [reviews, setReviews] = useState({});
+  const allowed = agreements.includes(actor);
+  function switchActor(value) {
+    setActor(Number(value));
+    setRating(null);
+    setEditing(false);
+    setStars('');
+    setReason('');
+    setTitle('');
+    setDescription('');
+  }
+  function transition(id, action) {
+    if (!allowed) return;
+    setRequests((rows) =>
+      rows.map((row) => {
+        if (row.id !== id) return row;
+        if (
+          action === 'accept' &&
+          row.status === 'open' &&
+          row.requesterId !== actor &&
+          !(row.requesterId === 1 && blocked.includes(members[actor])) &&
+          !(actor === 1 && blocked.includes(members[row.requesterId]))
+        )
+          return { ...row, volunteerId: actor, status: 'accepted' };
+        if (
+          action === 'complete' &&
+          row.status === 'accepted' &&
+          row.requesterId === actor
+        )
+          return { ...row, status: 'completed' };
+        return row;
+      }),
+    );
+  }
+  const visible = requests.filter(
+    (r) =>
+      r.requesterId === actor ||
+      r.volunteerId === actor ||
+      (r.status === 'open' &&
+        !(actor === 1 && blocked.includes(members[r.requesterId])) &&
+        !(r.requesterId === 1 && blocked.includes(members[actor]))),
+  );
+  return (
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={s.content}
+    >
+      <Text style={s.title}>Community help</Text>
+      <Choices
+        title="Demo account"
+        values={['1', '2']}
+        labels={['You · requester', 'Camille · volunteer']}
+        value={String(actor)}
+        change={switchActor}
+      />
+      <View style={s.card}>
+        <Text style={s.section}>Community rules · v1.0</Text>
+        <Text style={s.body}>{RULES}</Text>
+        <Button
+          label={allowed ? 'Rules accepted' : 'Agree to rules'}
+          disabled={allowed}
+          onPress={() => agree(actor)}
+        />
+      </View>
+      <Button
+        label={editing ? 'Cancel request' : 'Post a request'}
+        disabled={!allowed}
+        onPress={() => setEditing(!editing)}
+      />
+      {editing && (
+        <View style={s.card}>
+          <TextInput
+            style={s.input}
+            placeholder="Request title"
+            value={title}
+            onChangeText={setTitle}
+            maxLength={120}
+          />
+          <Choices
+            title="Category"
+            values={['Everyday help', 'Transit', 'Language']}
+            labels={['Everyday help', 'Transit', 'Language']}
+            value={category}
+            change={setCategory}
+          />
+          <TextInput
+            style={s.input}
+            multiline
+            placeholder="What help do you need?"
+            value={description}
+            onChangeText={setDescription}
+            maxLength={1000}
+          />
+          <Button
+            label="Publish request"
+            disabled={!allowed || !title.trim() || !description.trim()}
+            onPress={() => {
+              if (!allowed || !title.trim() || !description.trim()) return;
+              const item = {
+                id: next.current++,
+                requesterId: actor,
+                volunteerId: null,
+                title: title.trim(),
+                description: description.trim(),
+                category,
+                status: 'open',
+              };
+              setRequests((prev) => [item, ...prev]);
+              setEditing(false);
+              setTitle('');
+              setDescription('');
+            }}
+          />
+        </View>
+      )}
+      {visible.map((r) => (
+        <View key={r.id} style={s.card}>
+          <Text style={s.meta}>
+            {r.category} · {r.status.toUpperCase()}
+          </Text>
+          <Text style={s.cardTitle}>{r.title}</Text>
+          <Text style={s.body}>{r.description}</Text>
+          <Text style={s.meta}>
+            Requested by {members[r.requesterId]}
+            {r.volunteerId ? ' · Helper: ' + members[r.volunteerId] : ''}
+          </Text>
+          {r.status === 'open' && actor !== r.requesterId && (
+            <Button
+              label="Accept request"
+              disabled={!allowed}
+              onPress={() => transition(r.id, 'accept')}
+            />
+          )}
+          {r.status === 'accepted' && actor === r.requesterId && (
+            <Button
+              label="Confirm completion"
+              disabled={!allowed}
+              onPress={() => transition(r.id, 'complete')}
+            />
+          )}
+          {r.status === 'completed' &&
+            (reviews[r.id] ? (
+              <Text style={s.bold}>
+                {reviews[r.id].stars}/5 · {reviews[r.id].reason || 'Reviewed'}
+              </Text>
+            ) : (
+              actor === r.requesterId &&
+              (rating === r.id ? (
+                <>
+                  <Choices
+                    title="Rate your volunteer"
+                    values={['1', '2', '3', '4', '5']}
+                    labels={['1 ★', '2 ★', '3 ★', '4 ★', '5 ★']}
+                    value={stars}
+                    change={setStars}
+                  />
+                  <TextInput
+                    style={s.input}
+                    multiline
+                    placeholder={
+                      Number(stars) < 4
+                        ? 'Reason (required for 1–3 stars)'
+                        : 'Comment (optional)'
+                    }
+                    maxLength={1000}
+                    value={reason}
+                    onChangeText={setReason}
+                  />
+                  <Button
+                    label="Submit rating"
+                    disabled={
+                      !allowed ||
+                      !stars ||
+                      (Number(stars) < 4 && !reason.trim())
+                    }
+                    onPress={() => {
+                      if (
+                        !allowed ||
+                        !stars ||
+                        (Number(stars) < 4 && !reason.trim())
+                      )
+                        return;
+                      setReviews((prev) =>
+                        prev[r.id]
+                          ? prev
+                          : {
+                              ...prev,
+                              [r.id]: {
+                                stars: Number(stars),
+                                reason: reason.trim(),
+                              },
+                            },
+                      );
+                      setRating(null);
+                    }}
+                  />
+                </>
+              ) : (
+                <Button
+                  label="Rate volunteer"
+                  onPress={() => {
+                    setRating(r.id);
+                    setStars('');
+                    setReason('');
+                  }}
+                />
+              ))
+            ))}
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+const s = StyleSheet.create({
+  page: { flex: 1, backgroundColor: C.cream },
+  content: {
+    width: '100%',
+    maxWidth: 660,
+    alignSelf: 'center',
+    padding: 18,
+    paddingBottom: 44,
+    gap: 16,
+  },
+  header: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  brand: { fontSize: 23, letterSpacing: -1, fontWeight: '900', color: C.ink },
+  pill: {
+    backgroundColor: C.lilac,
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  hero: {
+    backgroundColor: C.yellow,
+    borderRadius: 28,
+    padding: 22,
+    overflow: 'hidden',
+    gap: 16,
+  },
+  heroMark: {
+    position: 'absolute',
+    top: -38,
+    right: -15,
+    fontSize: 158,
+    color: '#F3BB25',
+  },
+  eyebrow: { color: C.ink, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
+  heroTitle: {
+    color: C.ink,
+    fontSize: 44,
+    lineHeight: 46,
+    fontWeight: '900',
+    letterSpacing: -2,
+  },
+  tabs: {
+    flexDirection: 'row',
+    padding: 4,
+    borderRadius: 26,
+    backgroundColor: '#EEEEE4',
+  },
+  tab: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 44,
+    borderRadius: 22,
+  },
+  active: { backgroundColor: C.ink },
+  tabLabel: {
+    color: C.ink,
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  section: {
+    fontSize: 23,
+    color: C.ink,
+    fontWeight: '800',
+    letterSpacing: -0.8,
+  },
+  card: {
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#DEDED1',
+    gap: 10,
+    backgroundColor: C.white,
+  },
+  title: { fontSize: 30, color: C.ink, fontWeight: '900', letterSpacing: -1 },
+  cardTitle: {
+    fontSize: 22,
+    color: C.ink,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+  },
+  body: { color: C.muted, fontSize: 16, lineHeight: 23 },
+  meta: { color: C.muted, fontWeight: '700', fontSize: 13 },
+  bold: { color: C.ink, fontWeight: '700' },
+  button: {
+    backgroundColor: C.ink,
+    borderRadius: 18,
+    minHeight: 44,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  soft: { backgroundColor: '#F1E8FE' },
+  buttonText: { color: C.white, fontSize: 15, fontWeight: '700' },
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
+  portrait: {
+    backgroundColor: C.lilac,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 170,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  orbit: {
+    position: 'absolute',
+    width: '130%',
+    height: 42,
+    backgroundColor: C.ink,
+    transform: [{ rotate: '-16deg' }],
+  },
+  sun: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: C.yellow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monogram: {
+    fontWeight: '900',
+    fontSize: 45,
+    letterSpacing: -3,
+    color: C.ink,
+  },
+  stamp: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    backgroundColor: C.cream,
+    color: C.ink,
+    padding: 6,
+    fontWeight: '700',
+  },
+  scrim: {
+    flex: 1,
+    backgroundColor: 'rgba(25,25,18,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  sheet: {
+    width: '100%',
+    maxWidth: 460,
+    maxHeight: '90%',
+    backgroundColor: C.cream,
+    borderTopWidth: 8,
+    borderTopColor: C.yellow,
+    borderRadius: 26,
+    overflow: 'hidden',
+  },
+  sheetBody: { padding: 20, gap: 13 },
+  input: {
+    color: C.ink,
+    backgroundColor: C.white,
+    borderWidth: 1,
+    borderColor: '#BDBEAF',
+    padding: 13,
+    borderRadius: 14,
+    fontSize: 16,
+  },
+  star: {
+    minWidth: 42,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.yellow,
+    borderRadius: 12,
+  },
+});
+const initialPosts = [
+  {
+    id: 1,
+    author: 'Noor',
+    area: 'Downtown',
+    topic: 'Coffee walk',
+    content:
+      'Anyone up for a coffee walk near Concordia on Friday? I moved here last week and would love some company.',
+    likes: 4,
+  },
+  {
+    id: 2,
+    author: 'Camille',
+    area: 'Le Plateau',
+    topic: 'Photo walk',
+    content:
+      'Taking my camera out for the colourful staircases this weekend. Beginners welcome!',
+    likes: 8,
+  },
+  {
+    id: 3,
+    author: 'Lou',
+    area: 'Verdun',
+    topic: 'Language exchange',
+    content:
+      'English and French by the river? Let’s practise a few phrases on a walk.',
+    likes: 3,
+  },
+];
+const matches = (query, ...values) =>
+  values.join(' ').toLowerCase().includes(query.trim().toLowerCase());
+export default function CoucouSocial() {
+  const [tab, setTab] = useState('Feed');
+  const [trail, setTrail] = useState([]);
+  const detail = trail[trail.length - 1];
+  const [modal, setModal] = useState('location');
+  const [area, setArea] = useState(null);
+  const [blocked, setBlocked] = useState([]);
+  const [agreements, setAgreements] = useState([]);
+  const agree = (id) =>
+    setAgreements((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  const [reports, setReports] = useState([]);
+  const [reportReason, setReportReason] = useState('');
+  const [notice, setNotice] = useState('');
+  const [posts, setPosts] = useState(initialPosts);
+  const [likes, setLikes] = useState([]);
+  const [query, setQuery] = useState('');
+  const [postText, setPostText] = useState('');
+  const [postArea, setPostArea] = useState('Downtown');
+  const [bio, setBio] = useState(
+    'New in Montréal. Always up for a neighbourhood walk.',
+  );
+  const [bioDraft, setBioDraft] = useState('');
+  const [chatDrafts, setChatDrafts] = useState({});
+  const [threads, setThreads] = useState({
+    Noor: [{ id: 1, text: 'Hey! Want to join the coffee walk?', own: false }],
+  });
+  const nextId = useRef(10);
+  const chatScroll = useRef(null);
+  const [visitedHelp, setVisitedHelp] = useState(false);
+  const close = () => setModal(null);
+  const go = (next) => setTrail((prev) => [...prev, next]);
+  const back = () => setTrail((prev) => prev.slice(0, -1));
+  const profile = (name) => {
+    setNotice('');
+    if (name === 'You') {
+      setTab('Me');
+      setTrail([]);
+    } else go({ kind: 'profile', name });
+  };
+  const inArea = (value) => !area || area === value;
+  const filteredPosts = posts.filter(
+    (p) =>
+      !blocked.includes(p.author) &&
+      inArea(p.area) &&
+      matches(query, p.content, p.topic, p.author, p.area),
+  );
+  const filteredPeople = people.filter(
+    (p) =>
+      !blocked.includes(p.name) &&
+      inArea(p.area) &&
+      matches(query, p.name, p.bio, p.interest, p.area, p.languages),
+  );
+  const author =
+    detail?.kind === 'profile'
+      ? people.find((p) => p.name === detail.name)
+      : undefined;
+  const activeChat = detail?.kind === 'chat' ? detail.name : null;
+  const openHelp = () => {
+    setVisitedHelp(true);
+    go({ kind: 'help' });
+  };
+  function postCard(p) {
+    const liked = likes.includes(p.id);
+    return (
+      <View key={p.id} style={s.card}>
+        <Pressable accessibilityRole="button" onPress={() => profile(p.author)}>
+          <Text style={s.bold}>{p.author} ↗</Text>
+          <Text style={s.meta}>
+            {p.area} · {p.topic}
+          </Text>
+        </Pressable>
+        <Text style={s.body}>{p.content}</Text>
+        <View style={s.row}>
+          <Button
+            soft
+            label={(liked ? '♥ ' : '♡ ') + (p.likes + Number(liked))}
+            onPress={() =>
+              setLikes((prev) =>
+                prev.includes(p.id)
+                  ? prev.filter((id) => id !== p.id)
+                  : [...prev, p.id],
+              )
+            }
+          />
+          {p.author !== 'You' && (
+            <Button
+              soft
+              label="Message"
+              onPress={() => go({ kind: 'chat', name: p.author })}
+            />
+          )}
+        </View>
+      </View>
+    );
+  }
+  function send() {
+    if (!activeChat) return;
+    const text = (chatDrafts[activeChat] ?? '').trim();
+    if (!text) return;
+    const message = { id: nextId.current++, own: true, text };
+    setThreads((prev) => ({
+      ...prev,
+      [activeChat]: [...(prev[activeChat] ?? []), message],
+    }));
+    setChatDrafts((prev) => ({ ...prev, [activeChat]: '' }));
+  }
+  return (
+    <SafeAreaView style={s.page}>
+      <View style={social.top}>
+        {detail ? (
+          <Button soft label="‹ Back" onPress={back} />
+        ) : (
+          <Text style={s.brand}>☀ CoucouMTL</Text>
+        )}
+        <Button
+          soft
+          label={area ?? 'Montréal ▾'}
+          onPress={() => setModal('location')}
+        />
+      </View>
+      {visitedHelp && (
+        <View
+          style={{
+            flex: 1,
+            display: detail?.kind === 'help' ? 'flex' : 'none',
+          }}
+        >
+          <CommunityBoard
+            blocked={blocked}
+            agreements={agreements}
+            agree={agree}
+          />
+        </View>
+      )}
+      {activeChat ? (
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={social.chatHeading}>
+            <Text style={s.section}>{activeChat}</Text>
+            <Button
+              soft
+              label="View profile"
+              onPress={() => profile(activeChat)}
+            />
+          </View>
+          <ScrollView
+            ref={chatScroll}
+            contentContainerStyle={s.content}
+            onContentSizeChange={() =>
+              chatScroll.current?.scrollToEnd({ animated: false })
+            }
+          >
+            {!threads[activeChat]?.length && (
+              <Text style={s.meta}>Say hello to {activeChat}.</Text>
+            )}
+            {(threads[activeChat] ?? []).map((m) => (
+              <View key={m.id} style={[social.bubble, m.own && social.mine]}>
+                <Text style={s.body}>{m.text}</Text>
+              </View>
+            ))}
+          </ScrollView>
+          <View style={social.composer}>
+            <TextInput
+              accessibilityLabel="Message"
+              style={[s.input, { flex: 1 }]}
+              value={chatDrafts[activeChat] ?? ''}
+              placeholder="Write a message…"
+              onChangeText={(t) =>
+                setChatDrafts((prev) => ({ ...prev, [activeChat]: t }))
+              }
+            />
+            <Button
+              label="Send"
+              disabled={!chatDrafts[activeChat]?.trim()}
+              onPress={send}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      ) : (
+        detail?.kind !== 'help' && (
+          <ScrollView
+            key={detail?.kind === 'profile' ? detail.name : tab}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={s.content}
+          >
+            {(!detail && tab === 'Me') || author ? (
+              <>
+                <View style={s.portrait}>
+                  <View style={s.orbit} />
+                  <View style={s.sun}>
+                    <Text style={s.monogram}>{author?.initials ?? 'ME'}</Text>
+                  </View>
+                </View>
+                <Text style={s.title}>{author?.name ?? 'My profile'}</Text>
+                <Text style={s.meta}>
+                  {author
+                    ? author.role + ' · ' + author.area
+                    : 'Newcomer · Montréal'}
+                </Text>
+                <Text style={s.body}>{author?.bio ?? bio}</Text>
+                {author ? (
+                  <>
+                    <Text style={s.bold}>
+                      {author.languages} · {author.interest}
+                    </Text>
+                    <Button
+                      label={'Message ' + author.name}
+                      onPress={() => go({ kind: 'chat', name: author.name })}
+                    />
+                  </>
+                ) : (
+                  <Button
+                    soft
+                    label="Edit bio"
+                    onPress={() => {
+                      setBioDraft(bio);
+                      setModal('edit');
+                    }}
+                  />
+                )}
+                {author ? (
+                  <View style={s.row}>
+                    <Button
+                      soft
+                      label="Block user"
+                      onPress={() => setModal('block')}
+                    />
+                    <Button
+                      soft
+                      label="Report user"
+                      onPress={() => {
+                        setReportReason('');
+                        setNotice('');
+                        setModal('report');
+                      }}
+                    />
+                  </View>
+                ) : (
+                  <>
+                    <Button
+                      soft
+                      label="Community rules"
+                      onPress={() => setModal('rules')}
+                    />
+                    <Text style={s.meta}>
+                      Blocked members: {blocked.length} · Reports sent:{' '}
+                      {reports.length}
+                    </Text>
+                  </>
+                )}
+                {author && notice && (
+                  <Text accessibilityLiveRegion="polite" style={s.meta}>
+                    {notice}
+                  </Text>
+                )}
+                <Text style={s.section}>Posts</Text>
+                {posts
+                  .filter((p) => p.author === (author?.name ?? 'You'))
+                  .map(postCard)}
+                {!author && !posts.some((p) => p.author === 'You') && (
+                  <Text style={s.body}>Your posts will appear here.</Text>
+                )}
+              </>
+            ) : tab === 'Feed' ? (
+              <>
+                <View style={s.hero}>
+                  <Text style={s.heroMark}>☀</Text>
+                  <Text style={s.eyebrow}>MONTRÉAL</Text>
+                  <Text style={s.heroTitle}>Around the block.</Text>
+                </View>
+                <View style={s.header}>
+                  <Text style={s.section}>Neighbourhood feed</Text>
+                  <Button
+                    label="+ Post"
+                    onPress={() => {
+                      setPostArea(area ?? areas[0]);
+                      setModal('post');
+                    }}
+                  />
+                </View>
+                {posts
+                  .filter((p) => !blocked.includes(p.author) && inArea(p.area))
+                  .map(postCard)}
+                <Button
+                  soft
+                  label="Community help board ↗"
+                  onPress={openHelp}
+                />
+              </>
+            ) : tab === 'Discover' ? (
+              <>
+                <Text style={s.title}>Discover</Text>
+                <Communities />
+                <TextInput
+                  accessibilityLabel="Search"
+                  style={s.input}
+                  placeholder="Search people, interests or posts"
+                  value={query}
+                  onChangeText={setQuery}
+                />
+                <Text style={s.section}>People</Text>
+                {filteredPeople.map((p) => (
+                  <Pressable
+                    key={p.name}
+                    accessibilityRole="button"
+                    style={s.card}
+                    onPress={() => profile(p.name)}
+                  >
+                    <Text style={s.cardTitle}>{p.name} ↗</Text>
+                    <Text style={s.meta}>
+                      {p.area} · {p.interest}
+                    </Text>
+                  </Pressable>
+                ))}
+                {!filteredPeople.length && (
+                  <Text style={s.body}>No people match this search.</Text>
+                )}
+                <Text style={s.section}>Posts</Text>
+                {filteredPosts.map(postCard)}
+                {!filteredPosts.length && (
+                  <Text style={s.body}>No matching posts.</Text>
+                )}
+              </>
+            ) : (
+              <>
+                <Text style={s.title}>Inbox</Text>
+                {Object.entries(threads)
+                  .filter(([name]) => !blocked.includes(name))
+                  .sort(
+                    (a, b) =>
+                      b[1][b[1].length - 1].id - a[1][a[1].length - 1].id,
+                  )
+                  .map(([name, list]) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={name}
+                      style={s.card}
+                      onPress={() => go({ kind: 'chat', name })}
+                    >
+                      <Text style={s.cardTitle}>{name} ↗</Text>
+                      <Text numberOfLines={1} style={s.body}>
+                        {list[list.length - 1].text}
+                      </Text>
+                    </Pressable>
+                  ))}
+              </>
+            )}
+          </ScrollView>
+        )
+      )}
+      {!detail && (
+        <View style={social.nav}>
+          {['Feed', 'Discover', 'Inbox', 'Me'].map((t) => (
+            <Pressable
+              key={t}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: tab === t }}
+              onPress={() => setTab(t)}
+              style={[s.tab, t === tab && s.active]}
+            >
+              <Text style={[s.tabLabel, t === tab && { color: C.white }]}>
+                {t}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+      <Modal
+        visible={modal !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={close}
+      >
+        <KeyboardAvoidingView
+          style={s.scrim}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={s.sheet}>
+            <ScrollView
+              contentContainerStyle={s.sheetBody}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={s.header}>
+                <Text style={s.brand}>☀ CoucouMTL</Text>
+                <Button soft label="Close" onPress={close} />
+              </View>
+              {modal === 'location' ? (
+                <>
+                  <Text style={s.title}>Where in Montréal?</Text>
+                  <Text style={s.body}>
+                    Choose an area for your feed and discoveries.
+                  </Text>
+                  {areas.map((a) => (
+                    <Button
+                      key={a}
+                      soft
+                      label={a}
+                      onPress={() => {
+                        setArea(a);
+                        close();
+                      }}
+                    />
+                  ))}
+                  <Button
+                    label="Browse all Montréal"
+                    onPress={() => {
+                      setArea(null);
+                      close();
+                    }}
+                  />
+                </>
+              ) : modal === 'post' ? (
+                <>
+                  <Text style={s.title}>Share a post</Text>
+                  <TextInput
+                    accessibilityLabel="Post text"
+                    multiline
+                    style={s.input}
+                    placeholder="What’s happening nearby?"
+                    value={postText}
+                    onChangeText={setPostText}
+                    maxLength={1200}
+                  />
+                  <View style={s.row}>
+                    {areas.map((a) => (
+                      <Button
+                        label={a}
+                        soft={a !== postArea}
+                        key={a}
+                        onPress={() => setPostArea(a)}
+                      />
+                    ))}
+                  </View>
+                  <Button
+                    label="Publish"
+                    disabled={!postText.trim()}
+                    onPress={() => {
+                      const p = {
+                        id: nextId.current++,
+                        author: 'You',
+                        content: postText.trim(),
+                        area: postArea,
+                        topic: 'Community',
+                        likes: 0,
+                      };
+                      setPosts((prev) => [p, ...prev]);
+                      if (area) setArea(postArea);
+                      setPostText('');
+                      close();
+                    }}
+                  />
+                </>
+              ) : modal === 'rules' ? (
+                <>
+                  <Text style={s.title}>Community rules · v1.0</Text>
+                  <Text style={s.body}>{RULES}</Text>
+                  <Button
+                    label={
+                      agreements.includes(1)
+                        ? 'Rules accepted'
+                        : 'Agree to rules'
+                    }
+                    disabled={agreements.includes(1)}
+                    onPress={() => {
+                      agree(1);
+                      close();
+                    }}
+                  />
+                </>
+              ) : modal === 'report' && author ? (
+                <>
+                  <Text style={s.title}>Report {author.name}</Text>
+                  <Text style={s.body}>
+                    Tell us what happened. A reason is required.
+                  </Text>
+                  <TextInput
+                    style={s.input}
+                    multiline
+                    placeholder="Reason for report"
+                    value={reportReason}
+                    onChangeText={setReportReason}
+                    maxLength={1000}
+                  />
+                  <Button
+                    label="Submit report"
+                    disabled={!reportReason.trim()}
+                    onPress={() => {
+                      if (!reportReason.trim()) return;
+                      setReports((prev) => [
+                        ...prev,
+                        { name: author.name, reason: reportReason.trim() },
+                      ]);
+                      setNotice('Report recorded in this demo.');
+                      close();
+                    }}
+                  />
+                </>
+              ) : modal === 'block' && author ? (
+                <>
+                  <Text style={s.title}>Block {author.name}?</Text>
+                  <Text style={s.body}>
+                    Their posts, profile and conversation will be hidden from
+                    your account.
+                  </Text>
+                  <Button
+                    label="Confirm block"
+                    onPress={() => {
+                      setBlocked((prev) => [
+                        ...new Set([...prev, author.name]),
+                      ]);
+                      close();
+                      setTrail([]);
+                      setTab('Feed');
+                    }}
+                  />
+                </>
+              ) : (
+                modal === 'edit' && (
+                  <>
+                    <Text style={s.title}>Edit bio</Text>
+                    <TextInput
+                      accessibilityLabel="Bio"
+                      multiline
+                      style={s.input}
+                      value={bioDraft}
+                      onChangeText={setBioDraft}
+                      maxLength={240}
+                    />
+                    <Button
+                      label="Save"
+                      onPress={() => {
+                        setBio(bioDraft.trim());
+                        close();
+                      }}
+                    />
+                  </>
+                )
+              )}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+const social = StyleSheet.create({
+  top: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+  },
+  nav: {
+    flexDirection: 'row',
+    padding: 6,
+    borderTopWidth: 1,
+    borderColor: '#DDDCD0',
+    backgroundColor: C.white,
+  },
+  chatHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: C.yellow,
+    padding: 16,
+  },
+  bubble: {
+    backgroundColor: C.lilac,
+    borderRadius: 18,
+    padding: 14,
+    alignSelf: 'flex-start',
+    maxWidth: '83%',
+  },
+  mine: { alignSelf: 'flex-end', backgroundColor: C.yellow },
+  composer: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 },
+});
