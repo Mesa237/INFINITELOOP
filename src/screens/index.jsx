@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -176,96 +176,149 @@ function Communities() {
     </View>
   );
 }
-function CommunityBoard({ blocked, agreements, agree }) {
-  const [actor, setActor] = useState(1);
-  const [requests, setRequests] = useState([
-    {
-      id: 1,
-      requesterId: 3,
-      volunteerId: null,
-      title: 'My first métro trip',
-      category: 'Transit',
-      description:
-        'Could someone show me how to buy a ticket at Guy–Concordia?',
-      status: 'open',
-    },
-  ]);
-  const next = useRef(2);
+function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
+  const [userId, setUserId] = useState(null);
+  const [requests, setRequests] = useState([]);
+  const [requesterNames, setRequesterNames] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('Everyday help');
+  const [category, setCategory] = useState('companionship');
   const [editing, setEditing] = useState(false);
-  const [rating, setRating] = useState(null);
-  const [stars, setStars] = useState('');
-  const [reason, setReason] = useState('');
-  const [reviews, setReviews] = useState({});
-  const allowed = agreements.includes(actor);
-  function switchActor(value) {
-    setActor(Number(value));
-    setRating(null);
-    setEditing(false);
-    setStars('');
-    setReason('');
-    setTitle('');
-    setDescription('');
-  }
-  function transition(id, action) {
-    if (!allowed) return;
-    setRequests((rows) =>
-      rows.map((row) => {
-        if (row.id !== id) return row;
-        if (
-          action === 'accept' &&
-          row.status === 'open' &&
-          row.requesterId !== actor &&
-          !(row.requesterId === 1 && blocked.includes(members[actor])) &&
-          !(actor === 1 && blocked.includes(members[row.requesterId]))
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRequests() {
+      setLoading(true);
+      setError('');
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) throw new Error('Please sign in to view community help.');
+
+        const { data: rows, error: requestError } = await supabase
+          .from('help_requests')
+          .select(
+            'id, requester_id, title, description, help_type, neighborhood, status, created_at',
+          )
+          .order('created_at', { ascending: false });
+        if (requestError) throw requestError;
+
+        const ids = [...new Set((rows ?? []).map((row) => row.requester_id))];
+        let profiles = [];
+        if (ids.length) {
+          const { data, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, display_name')
+            .in('id', ids);
+          if (profileError) throw profileError;
+          profiles = data ?? [];
+        }
+
+        if (active) {
+          setUserId(user.id);
+          setRequests(rows ?? []);
+          setRequesterNames(
+            Object.fromEntries(profiles.map((profile) => [profile.id, profile.display_name])),
+          );
+        }
+      } catch (loadError) {
+        if (active) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : 'Could not load help requests. Try again.',
+          );
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadRequests();
+    return () => {
+      active = false;
+    };
+  }, [reloadKey]);
+
+  async function publishRequest() {
+    const cleanTitle = title.trim();
+    const cleanDescription = description.trim();
+    const neighborhood = (area || '').trim();
+
+    if (!userId || cleanTitle.length < 5 || cleanDescription.length < 10 || !neighborhood) {
+      setError('Add a title, at least 10 characters of detail, and a neighbourhood.');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      const { data, error: insertError } = await supabase
+        .from('help_requests')
+        .insert({
+          requester_id: userId,
+          title: cleanTitle,
+          description: cleanDescription,
+          help_type: category,
+          neighborhood,
+          status: 'open',
+        })
+        .select(
+          'id, requester_id, title, description, help_type, neighborhood, status, created_at',
         )
-          return { ...row, volunteerId: actor, status: 'accepted' };
-        if (
-          action === 'complete' &&
-          row.status === 'accepted' &&
-          row.requesterId === actor
-        )
-          return { ...row, status: 'completed' };
-        return row;
-      }),
-    );
+        .single();
+
+      if (insertError) throw insertError;
+      setRequests((previous) => [data, ...previous]);
+      setRequesterNames((previous) => ({
+        ...previous,
+        [userId]: displayName || 'You',
+      }));
+      setTitle('');
+      setDescription('');
+      setCategory('companionship');
+      setEditing(false);
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : 'Could not publish your request. Try again.',
+      );
+    } finally {
+      setSaving(false);
+    }
   }
-  const visible = requests.filter(
-    (r) =>
-      r.requesterId === actor ||
-      r.volunteerId === actor ||
-      (r.status === 'open' &&
-        !(actor === 1 && blocked.includes(members[r.requesterId])) &&
-        !(r.requesterId === 1 && blocked.includes(members[actor]))),
-  );
+
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={s.content}
     >
       <Text style={s.title}>Community help</Text>
-      <Choices
-        title="Demo account"
-        values={['1', '2']}
-        labels={['You · requester', 'Camille · volunteer']}
-        value={String(actor)}
-        change={switchActor}
-      />
       <View style={s.card}>
         <Text style={s.section}>Community rules · v1.0</Text>
         <Text style={s.body}>{RULES}</Text>
         <Button
-          label={allowed ? 'Rules accepted' : 'Agree to rules'}
-          disabled={allowed}
-          onPress={() => agree(actor)}
+          label={rulesAccepted ? 'Rules accepted' : 'Agree to rules'}
+          disabled={rulesAccepted}
+          onPress={agree}
         />
       </View>
       <Button
         label={editing ? 'Cancel request' : 'Post a request'}
-        disabled={!allowed}
-        onPress={() => setEditing(!editing)}
+        disabled={!rulesAccepted}
+        onPress={() => {
+          setError('');
+          setEditing(!editing);
+        }}
       />
       {editing && (
         <View style={s.card}>
@@ -277,137 +330,83 @@ function CommunityBoard({ blocked, agreements, agree }) {
             maxLength={120}
           />
           <Choices
-            title="Category"
-            values={['Everyday help', 'Transit', 'Language']}
-            labels={['Everyday help', 'Transit', 'Language']}
+            title="What kind of help?"
+            values={[
+              'appointments',
+              'paperwork',
+              'transportation',
+              'companionship',
+              'language_practice',
+              'technology',
+              'other',
+            ]}
+            labels={[
+              'Appointments',
+              'Paperwork',
+              'Transportation',
+              'Companionship',
+              'Language practice',
+              'Technology',
+              'Other',
+            ]}
             value={category}
             change={setCategory}
           />
+          <Text style={s.meta}>Neighbourhood: {area || 'Montréal'}</Text>
           <TextInput
             style={s.input}
             multiline
-            placeholder="What help do you need?"
+            placeholder="What help do you need? (at least 10 characters)"
             value={description}
             onChangeText={setDescription}
-            maxLength={1000}
+            maxLength={2000}
           />
           <Button
-            label="Publish request"
-            disabled={!allowed || !title.trim() || !description.trim()}
-            onPress={() => {
-              if (!allowed || !title.trim() || !description.trim()) return;
-              const item = {
-                id: next.current++,
-                requesterId: actor,
-                volunteerId: null,
-                title: title.trim(),
-                description: description.trim(),
-                category,
-                status: 'open',
-              };
-              setRequests((prev) => [item, ...prev]);
-              setEditing(false);
-              setTitle('');
-              setDescription('');
-            }}
+            label={saving ? 'Publishing…' : 'Publish request'}
+            disabled={
+              saving ||
+              !userId ||
+              title.trim().length < 5 ||
+              description.trim().length < 10
+            }
+            onPress={publishRequest}
           />
         </View>
       )}
-      {visible.map((r) => (
-        <View key={r.id} style={s.card}>
-          <Text style={s.meta}>
-            {r.category} · {r.status.toUpperCase()}
-          </Text>
-          <Text style={s.cardTitle}>{r.title}</Text>
-          <Text style={s.body}>{r.description}</Text>
-          <Text style={s.meta}>
-            Requested by {members[r.requesterId]}
-            {r.volunteerId ? ' · Helper: ' + members[r.volunteerId] : ''}
-          </Text>
-          {r.status === 'open' && actor !== r.requesterId && (
-            <Button
-              label="Accept request"
-              disabled={!allowed}
-              onPress={() => transition(r.id, 'accept')}
-            />
-          )}
-          {r.status === 'accepted' && actor === r.requesterId && (
-            <Button
-              label="Confirm completion"
-              disabled={!allowed}
-              onPress={() => transition(r.id, 'complete')}
-            />
-          )}
-          {r.status === 'completed' &&
-            (reviews[r.id] ? (
-              <Text style={s.bold}>
-                {reviews[r.id].stars}/5 · {reviews[r.id].reason || 'Reviewed'}
-              </Text>
-            ) : (
-              actor === r.requesterId &&
-              (rating === r.id ? (
-                <>
-                  <Choices
-                    title="Rate your volunteer"
-                    values={['1', '2', '3', '4', '5']}
-                    labels={['1 ★', '2 ★', '3 ★', '4 ★', '5 ★']}
-                    value={stars}
-                    change={setStars}
-                  />
-                  <TextInput
-                    style={s.input}
-                    multiline
-                    placeholder={
-                      Number(stars) < 4
-                        ? 'Reason (required for 1–3 stars)'
-                        : 'Comment (optional)'
-                    }
-                    maxLength={1000}
-                    value={reason}
-                    onChangeText={setReason}
-                  />
-                  <Button
-                    label="Submit rating"
-                    disabled={
-                      !allowed ||
-                      !stars ||
-                      (Number(stars) < 4 && !reason.trim())
-                    }
-                    onPress={() => {
-                      if (
-                        !allowed ||
-                        !stars ||
-                        (Number(stars) < 4 && !reason.trim())
-                      )
-                        return;
-                      setReviews((prev) =>
-                        prev[r.id]
-                          ? prev
-                          : {
-                              ...prev,
-                              [r.id]: {
-                                stars: Number(stars),
-                                reason: reason.trim(),
-                              },
-                            },
-                      );
-                      setRating(null);
-                    }}
-                  />
-                </>
-              ) : (
-                <Button
-                  label="Rate volunteer"
-                  onPress={() => {
-                    setRating(r.id);
-                    setStars('');
-                    setReason('');
-                  }}
-                />
-              ))
-            ))}
+      {!!error && (
+        <Text accessibilityLiveRegion="polite" style={{ color: '#A43C32' }}>
+          {error}
+        </Text>
+      )}
+      {loading ? (
+        <Text style={s.meta}>Loading help requests…</Text>
+      ) : requests.length ? (
+        requests.map((request) => (
+          <View key={request.id} style={s.card}>
+            <Text style={s.meta}>
+              {request.help_type.replaceAll('_', ' ')} · {request.status.toUpperCase()}
+            </Text>
+            <Text style={s.cardTitle}>{request.title}</Text>
+            <Text style={s.body}>{request.description}</Text>
+            <Text style={s.meta}>
+              {request.neighborhood} · Requested by{' '}
+              {requesterNames[request.requester_id] ||
+                (request.requester_id === userId ? displayName || 'You' : 'Neighbour')}
+            </Text>
+          </View>
+        ))
+      ) : (
+        <View style={s.card}>
+          <Text style={s.body}>No help requests yet. You can post the first one.</Text>
         </View>
-      ))}
+      )}
+      {!loading && (
+        <Button
+          soft
+          label="Refresh requests"
+          onPress={() => setReloadKey((key) => key + 1)}
+        />
+      )}
     </ScrollView>
   );
 }
@@ -625,9 +624,7 @@ export default function CoucouSocial() {
   const [modal, setModal] = useState('location');
   const [area, setArea] = useState(null);
   const [blocked, setBlocked] = useState([]);
-  const [agreements, setAgreements] = useState([]);
-  const agree = (id) =>
-    setAgreements((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  const [rulesAccepted, setRulesAccepted] = useState(false);
   const [reports, setReports] = useState([]);
   const [reportReason, setReportReason] = useState('');
   const [notice, setNotice] = useState('');
@@ -636,9 +633,9 @@ export default function CoucouSocial() {
   const [query, setQuery] = useState('');
   const [postText, setPostText] = useState('');
   const [postArea, setPostArea] = useState('Downtown');
-  const [bio, setBio] = useState(
-    'New in Montréal. Always up for a neighbourhood walk.',
-  );
+  const [bio, setBio] = useState('');
+  const [currentProfile, setCurrentProfile] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
   const [bioDraft, setBioDraft] = useState('');
   const [chatDrafts, setChatDrafts] = useState({});
   const [threads, setThreads] = useState({
@@ -746,9 +743,10 @@ export default function CoucouSocial() {
           }}
         >
           <CommunityBoard
-            blocked={blocked}
-            agreements={agreements}
-            agree={agree}
+            area={area}
+            displayName={currentProfile?.display_name}
+            rulesAccepted={rulesAccepted}
+            agree={() => setRulesAccepted(true)}
           />
         </View>
       )}
