@@ -1,5 +1,25 @@
 import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '../../lib/supabase';
+import { makeStyles, useCoucouTheme } from '../theme/coucou';
+
+export default function AuthScreen() {
+  const { C } = useCoucouTheme();
+  const styles = useStyles();
+  const [mode, setMode] = useState('signin');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
     ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
@@ -393,7 +413,7 @@ export default function AuthScreen({ initialError, onClearError }) {
                   autoComplete="name"
                   onChangeText={setName}
                   placeholder="How neighbours will know you"
-                  placeholderTextColor="#929287"
+                  placeholderTextColor={C.placeholder}
                   returnKeyType="next"
                   style={styles.input}
                   value={name}
@@ -410,7 +430,7 @@ export default function AuthScreen({ initialError, onClearError }) {
                 keyboardType="email-address"
                 onChangeText={setEmail}
                 placeholder="you@example.com"
-                placeholderTextColor="#929287"
+                placeholderTextColor={C.placeholder}
                 returnKeyType="next"
                 style={styles.input}
                 textContentType="emailAddress"
@@ -426,6 +446,8 @@ export default function AuthScreen({ initialError, onClearError }) {
                 autoComplete={isSignUp ? "new-password" : "current-password"}
                 onChangeText={setPassword}
                 onSubmitEditing={submit}
+                placeholder={isSignUp ? 'At least 6 characters' : 'Your password'}
+                placeholderTextColor={C.placeholder}
                 placeholder={
                   isSignUp ? "At least 6 characters" : "Your password"
                 }
@@ -460,7 +482,7 @@ export default function AuthScreen({ initialError, onClearError }) {
               ]}
             >
               {busy ? (
-                <ActivityIndicator color={palette.ink} />
+                <ActivityIndicator color={C.onAccent} />
               ) : (
                 <Text style={styles.submitText}>
                   {isSignUp
@@ -484,9 +506,37 @@ export default function AuthScreen({ initialError, onClearError }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: palette.cream },
+const useStyles = makeStyles((C) => ({
+  safe: { flex: 1, backgroundColor: C.page },
   flex: { flex: 1 },
+  scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 28, width: '100%', maxWidth: 600, alignSelf: 'center' },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 32 },
+  sun: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.yellow, alignItems: 'center', justifyContent: 'center' },
+  sunGlyph: { color: C.onAccent, fontSize: 22 },
+  brand: { color: C.text, fontSize: 19, fontWeight: '800', letterSpacing: -0.5 },
+  brandAccent: { fontWeight: '500' },
+  intro: { marginBottom: 25 },
+  kicker: { color: C.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12 },
+  title: { color: C.text, fontSize: 34, fontWeight: '800', lineHeight: 39, letterSpacing: -1, maxWidth: 430 },
+  subtitle: { color: C.muted, fontSize: 16, lineHeight: 24, marginTop: 12, maxWidth: 450 },
+  card: { backgroundColor: C.card, borderColor: C.border, borderWidth: 1, borderRadius: 22, padding: 20, shadowColor: C.shadow, shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 7 }, elevation: 2 },
+  switcher: { flexDirection: 'row', padding: 4, borderRadius: 14, backgroundColor: C.track, marginBottom: 22 },
+  switchOption: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 44, borderRadius: 11, paddingHorizontal: 8 },
+  switchSelected: { backgroundColor: C.yellow },
+  switchText: { color: C.muted, fontSize: 14, fontWeight: '700' },
+  switchTextSelected: { color: C.onAccent },
+  fieldGroup: { marginBottom: 16 },
+  label: { color: C.text, fontSize: 14, fontWeight: '700', marginBottom: 7 },
+  input: { width: '100%', minHeight: 50, borderWidth: 1, borderColor: C.inputBorder, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: C.text, backgroundColor: C.inputBg, fontSize: 15 },
+  message: { fontSize: 13, lineHeight: 19, marginBottom: 14 },
+  error: { color: C.error },
+  success: { color: C.success },
+  submit: { minHeight: 52, borderRadius: 14, backgroundColor: C.yellow, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, marginTop: 2 },
+  submitText: { color: C.onAccent, fontSize: 15, fontWeight: '800' },
+  dimmed: { opacity: 0.6 },
+  privacy: { color: C.muted, fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 16 },
+  footer: { color: C.muted, fontSize: 13, textAlign: 'center', marginTop: 22 },
+}));
   scroll: {
     flexGrow: 1,
     justifyContent: "center",
