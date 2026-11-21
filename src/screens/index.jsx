@@ -182,6 +182,7 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   const [requesterNames, setRequesterNames] = useState({});
   const [matches, setMatches] = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [ratingsByProfile, setRatingsByProfile] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busyAction, setBusyAction] = useState('');
@@ -253,11 +254,32 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
           profiles = data ?? [];
         }
 
+        const ratingIds = [
+          ...new Set([user.id, ...matchRows.map((match) => match.volunteer_id)]),
+        ];
+        const ratingPairs = await Promise.all(
+          ratingIds.map(async (profileId) => {
+            try {
+              const { data, error: ratingError } = await supabase.rpc(
+                'get_profile_rating',
+                { target_profile_id: profileId },
+              );
+              if (ratingError) return null;
+              return [profileId, data?.[0] ?? null];
+            } catch {
+              return null;
+            }
+          }),
+        );
+
         if (active) {
           setUserId(user.id);
           setRequests(requestRows);
           setMatches(matchRows);
           setReviews(reviewRows);
+          setRatingsByProfile(
+            Object.fromEntries(ratingPairs.filter((pair) => pair !== null)),
+          );
           setRequesterNames(
             Object.fromEntries(profiles.map((profile) => [profile.id, profile.display_name])),
           );
@@ -563,6 +585,13 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
                 <View key={offer.id} style={[s.card, { backgroundColor: C.cream }]}>
                   <Text style={s.bold}>
                     Offer from {requesterNames[offer.volunteer_id] || 'a neighbour'}
+                    {ratingsByProfile[offer.volunteer_id]?.review_count > 0
+                      ? ' · ' +
+                        Number(ratingsByProfile[offer.volunteer_id].average_rating).toFixed(1) +
+                        ' ★ (' +
+                        ratingsByProfile[offer.volunteer_id].review_count +
+                        ')'
+                      : ''}
                   </Text>
                   <Button
                     label="Accept volunteer"
@@ -920,6 +949,7 @@ export default function CoucouSocial() {
   const [bio, setBio] = useState('');
   const [currentProfile, setCurrentProfile] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [profileRating, setProfileRating] = useState(null);
   const [profileSaving, setProfileSaving] = useState(false);
 
   useEffect(() => {
@@ -957,9 +987,21 @@ export default function CoucouSocial() {
           profileData = created;
         }
 
+        let ratingSummary = null;
+        try {
+          const { data: ratingData, error: ratingError } = await supabase.rpc(
+            'get_profile_rating',
+            { target_profile_id: user.id },
+          );
+          if (!ratingError) ratingSummary = ratingData?.[0] ?? null;
+        } catch {
+          ratingSummary = null;
+        }
+
         if (active) {
           setCurrentUserId(user.id);
           setCurrentProfile(profileData);
+          setProfileRating(ratingSummary);
           setBio(profileData.bio ?? '');
         }
       } catch (loadError) {
@@ -1167,6 +1209,16 @@ export default function CoucouSocial() {
                       ' · ' +
                       (currentProfile?.neighborhood || area || 'Montréal')}
                 </Text>
+                {!author && (
+                  <Text style={s.meta}>
+                    {profileRating?.review_count > 0
+                      ? Number(profileRating.average_rating).toFixed(1) +
+                        ' ★ · ' +
+                        profileRating.review_count +
+                        (profileRating.review_count === 1 ? ' review' : ' reviews')
+                      : 'No reviews yet'}
+                  </Text>
+                )}
                 <Text style={s.body}>
                   {(author?.bio ?? bio) || 'Add a short bio to introduce yourself.'}
                 </Text>
