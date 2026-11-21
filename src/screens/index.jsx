@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+import PublicServices from './public-services';
 // Change the palette here to restyle the whole screen.
 const C = {
   ink: '#20211C',
@@ -1121,7 +1122,7 @@ export default function CoucouSocial() {
         {detail ? (
           <Button soft label="‹ Back" onPress={back} />
         ) : (
-          <Text style={s.brand}>☀ CoucouMTL</Text>
+          <Text style={s.brand}>☀ CouCouMTL</Text>
         )}
         <Button
           soft
@@ -1190,6 +1191,8 @@ export default function CoucouSocial() {
             />
           </View>
         </KeyboardAvoidingView>
+      ) : !detail && tab === 'Services' ? (
+        <PublicServices />
       ) : (
         detail?.kind !== 'help' && (
           <ScrollView
@@ -1392,7 +1395,7 @@ export default function CoucouSocial() {
       )}
       {!detail && (
         <View style={social.nav}>
-          {['Feed', 'Discover', 'Inbox', 'Me'].map((t) => (
+          {['Feed', 'Discover', 'Services', 'Inbox', 'Me'].map((t) => (
             <Pressable
               key={t}
               accessibilityRole="tab"
@@ -1423,7 +1426,7 @@ export default function CoucouSocial() {
               keyboardShouldPersistTaps="handled"
             >
               <View style={s.header}>
-                <Text style={s.brand}>☀ CoucouMTL</Text>
+                <Text style={s.brand}>☀ CouCouMTL</Text>
                 <Button soft label="Close" onPress={close} />
               </View>
               {modal === 'location' ? (
