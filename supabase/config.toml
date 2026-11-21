@@ -1,0 +1,9 @@
+project_id = "coucoumontreal"
+
+[auth]
+enabled = true
+enable_signup = true
+
+[auth.email]
+enabled = true
+enable_confirmations = false
