@@ -52,7 +52,7 @@ export function CustomTabList(props: TabListProps) {
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
 
   return (
-    <View {...props} style={styles.tabListContainer}>
+    <View {...props} style={styles.tabListContainer} pointerEvents="box-none">
       <ThemedView type="backgroundElement" style={styles.innerContainer}>
         <ThemedText type="smallBold" style={styles.brandText}>
           Expo Starter

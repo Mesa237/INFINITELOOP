@@ -1123,11 +1123,20 @@ export default function CoucouSocial() {
         ) : (
           <Text style={s.brand}>☀ CoucouMTL</Text>
         )}
-        <Button
-          soft
-          label={area ?? 'Montréal ▾'}
-          onPress={() => setModal('location')}
-        />
+        <View style={social.topRight}>
+          <Button
+            label="Sign out"
+            onPress={async () => {
+              const { error } = await supabase.auth.signOut();
+              if (error) setNotice(error.message);
+            }}
+          />
+          <Button
+            soft
+            label={area ?? 'Montréal ▾'}
+            onPress={() => setModal('location')}
+          />
+        </View>
       </View>
       {visitedHelp && (
         <View
@@ -1498,13 +1507,13 @@ export default function CoucouSocial() {
                   <Text style={s.body}>{RULES}</Text>
                   <Button
                     label={
-                      agreements.includes(1)
+                      rulesAccepted
                         ? 'Rules accepted'
                         : 'Agree to rules'
                     }
-                    disabled={agreements.includes(1)}
+                    disabled={rulesAccepted}
                     onPress={() => {
-                      agree(1);
+                      setRulesAccepted(true);
                       close();
                     }}
                   />
@@ -1619,6 +1628,11 @@ const social = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 18,
     paddingVertical: 8,
+  },
+  topRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   nav: {
     flexDirection: 'row',
