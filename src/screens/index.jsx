@@ -636,6 +636,64 @@ export default function CoucouSocial() {
   const [bio, setBio] = useState('');
   const [currentProfile, setCurrentProfile] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [profileSaving, setProfileSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProfile() {
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) throw new Error('Please sign in to view your profile.');
+
+        let profileData;
+        const { data, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, display_name, role, languages, neighborhood, bio')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (profileError) throw profileError;
+        profileData = data;
+
+        if (!profileData) {
+          const fallbackName =
+            user.user_metadata?.display_name ||
+            user.email?.split('@')[0] ||
+            'New member';
+          const { data: created, error: createError } = await supabase
+            .from('profiles')
+            .upsert({ id: user.id, display_name: fallbackName.slice(0, 80) })
+            .select('id, display_name, role, languages, neighborhood, bio')
+            .single();
+          if (createError) throw createError;
+          profileData = created;
+        }
+
+        if (active) {
+          setCurrentUserId(user.id);
+          setCurrentProfile(profileData);
+          setBio(profileData.bio ?? '');
+        }
+      } catch (loadError) {
+        if (active) {
+          setNotice(
+            loadError instanceof Error
+              ? loadError.message
+              : 'Could not load your profile.',
+          );
+        }
+      }
+    }
+
+    loadProfile();
+    return () => {
+      active = false;
+    };
+  }, []);
   const [bioDraft, setBioDraft] = useState('');
   const [chatDrafts, setChatDrafts] = useState({});
   const [threads, setThreads] = useState({
@@ -811,13 +869,23 @@ export default function CoucouSocial() {
                     <Text style={s.monogram}>{author?.initials ?? 'ME'}</Text>
                   </View>
                 </View>
-                <Text style={s.title}>{author?.name ?? 'My profile'}</Text>
+                <Text style={s.title}>
+                  {author?.name ?? currentProfile?.display_name ?? 'My profile'}
+                </Text>
                 <Text style={s.meta}>
                   {author
                     ? author.role + ' · ' + author.area
-                    : 'Newcomer · Montréal'}
+                    : (currentProfile?.role === 'volunteer'
+                        ? 'Volunteer'
+                        : currentProfile?.role === 'both'
+                          ? 'Newcomer · Volunteer'
+                          : 'Newcomer') +
+                      ' · ' +
+                      (currentProfile?.neighborhood || area || 'Montréal')}
                 </Text>
-                <Text style={s.body}>{author?.bio ?? bio}</Text>
+                <Text style={s.body}>
+                  {(author?.bio ?? bio) || 'Add a short bio to introduce yourself.'}
+                </Text>
                 {author ? (
                   <>
                     <Text style={s.bold}>
@@ -876,7 +944,7 @@ export default function CoucouSocial() {
                     />
                   </>
                 )}
-                {author && notice && (
+                {notice && (
                   <Text accessibilityLiveRegion="polite" style={s.meta}>
                     {notice}
                   </Text>
@@ -1152,12 +1220,33 @@ export default function CoucouSocial() {
                       style={s.input}
                       value={bioDraft}
                       onChangeText={setBioDraft}
-                      maxLength={240}
+                      maxLength={500}
                     />
                     <Button
-                      label="Save"
-                      onPress={() => {
-                        setBio(bioDraft.trim());
+                      label={profileSaving ? 'Saving…' : 'Save'}
+                      disabled={profileSaving}
+                      onPress={async () => {
+                        if (!currentUserId) {
+                          setNotice('Could not find your signed-in profile.');
+                          return;
+                        }
+                        setProfileSaving(true);
+                        const nextBio = bioDraft.trim();
+                        const { error } = await supabase
+                          .from('profiles')
+                          .update({ bio: nextBio || null })
+                          .eq('id', currentUserId);
+                        setProfileSaving(false);
+                        if (error) {
+                          setNotice(error.message);
+                          return;
+                        }
+                        setBio(nextBio);
+                        setCurrentProfile((profile) => ({
+                          ...profile,
+                          bio: nextBio || null,
+                        }));
+                        setNotice('Bio saved.');
                         close();
                       }}
                     />
