@@ -180,14 +180,20 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   const [userId, setUserId] = useState(null);
   const [requests, setRequests] = useState([]);
   const [requesterNames, setRequesterNames] = useState({});
+  const [matches, setMatches] = useState([]);
+  const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [busyAction, setBusyAction] = useState('');
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('companionship');
   const [editing, setEditing] = useState(false);
+  const [reviewingRequest, setReviewingRequest] = useState(null);
+  const [stars, setStars] = useState('');
+  const [reviewReason, setReviewReason] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -211,20 +217,47 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
           .order('created_at', { ascending: false });
         if (requestError) throw requestError;
 
-        const ids = [...new Set((rows ?? []).map((row) => row.requester_id))];
+        const requestRows = rows ?? [];
+        const requestIds = requestRows.map((row) => row.id);
+        let matchRows = [];
+        let reviewRows = [];
+        if (requestIds.length) {
+          const { data: matchData, error: matchError } = await supabase
+            .from('matches')
+            .select('id, help_request_id, volunteer_id, status')
+            .in('help_request_id', requestIds);
+          if (matchError) throw matchError;
+          matchRows = matchData ?? [];
+
+          const { data: reviewData, error: reviewError } = await supabase
+            .from('reviews')
+            .select('id, help_request_id, reviewer_id, reviewee_id, rating, reason')
+            .in('help_request_id', requestIds);
+          if (reviewError) throw reviewError;
+          reviewRows = reviewData ?? [];
+        }
+
+        const profileIds = [
+          ...new Set([
+            ...requestRows.map((row) => row.requester_id),
+            ...matchRows.map((match) => match.volunteer_id),
+          ]),
+        ];
         let profiles = [];
-        if (ids.length) {
+        if (profileIds.length) {
           const { data, error: profileError } = await supabase
             .from('profiles')
             .select('id, display_name')
-            .in('id', ids);
+            .in('id', profileIds);
           if (profileError) throw profileError;
           profiles = data ?? [];
         }
 
         if (active) {
           setUserId(user.id);
-          setRequests(rows ?? []);
+          setRequests(requestRows);
+          setMatches(matchRows);
+          setReviews(reviewRows);
           setRequesterNames(
             Object.fromEntries(profiles.map((profile) => [profile.id, profile.display_name])),
           );
@@ -294,6 +327,90 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function offerToHelp(requestId) {
+    if (!userId || !rulesAccepted) return;
+    setBusyAction(requestId + ':offer');
+    setError('');
+    try {
+      const { data, error: insertError } = await supabase
+        .from('matches')
+        .insert({
+          help_request_id: requestId,
+          volunteer_id: userId,
+          status: 'pending',
+        })
+        .select('id, help_request_id, volunteer_id, status')
+        .single();
+      if (insertError) throw insertError;
+      setMatches((previous) => [...previous, data]);
+      setRequesterNames((previous) => ({
+        ...previous,
+        [userId]: displayName || 'You',
+      }));
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : 'Could not send your offer. Refresh and try again.',
+      );
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function updateMatch(match, nextStatus) {
+    setBusyAction(match.id + ':' + nextStatus);
+    setError('');
+    try {
+      const { error: updateError } = await supabase
+        .from('matches')
+        .update({ status: nextStatus })
+        .eq('id', match.id);
+      if (updateError) throw updateError;
+      setReloadKey((key) => key + 1);
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : 'Could not update this offer. Refresh and try again.',
+      );
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function submitReview(request, match) {
+    const rating = Number(stars);
+    const peerId =
+      request.requester_id === userId ? match.volunteer_id : request.requester_id;
+    if (!userId || !peerId || !rating || (rating < 4 && !reviewReason.trim())) return;
+
+    setBusyAction(request.id + ':review');
+    setError('');
+    try {
+      const { error: reviewError } = await supabase.from('reviews').insert({
+        help_request_id: request.id,
+        reviewer_id: userId,
+        reviewee_id: peerId,
+        rating,
+        reason: reviewReason.trim() || null,
+      });
+      if (reviewError) throw reviewError;
+      setReviewingRequest(null);
+      setStars('');
+      setReviewReason('');
+      setReloadKey((key) => key + 1);
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : 'Could not save your rating. Try again.',
+      );
+    } finally {
+      setBusyAction('');
     }
   }
 
@@ -381,20 +498,187 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
       {loading ? (
         <Text style={s.meta}>Loading help requests…</Text>
       ) : requests.length ? (
-        requests.map((request) => (
-          <View key={request.id} style={s.card}>
-            <Text style={s.meta}>
-              {request.help_type.replaceAll('_', ' ')} · {request.status.toUpperCase()}
-            </Text>
-            <Text style={s.cardTitle}>{request.title}</Text>
-            <Text style={s.body}>{request.description}</Text>
-            <Text style={s.meta}>
-              {request.neighborhood} · Requested by{' '}
-              {requesterNames[request.requester_id] ||
-                (request.requester_id === userId ? displayName || 'You' : 'Neighbour')}
-            </Text>
-          </View>
-        ))
+        requests.map((request) => {
+          const requestMatches = matches.filter(
+            (match) => match.help_request_id === request.id,
+          );
+          const myOffer = requestMatches.find(
+            (match) => match.volunteer_id === userId,
+          );
+          const acceptedMatch = requestMatches.find(
+            (match) => match.status === 'accepted' || match.status === 'completed',
+          );
+          const pendingOffers =
+            request.requester_id === userId
+              ? requestMatches.filter((match) => match.status === 'pending')
+              : [];
+          const requestReviews = reviews.filter(
+            (review) => review.help_request_id === request.id,
+          );
+          const myReview = requestReviews.find(
+            (review) => review.reviewer_id === userId,
+          );
+          const isParticipant =
+            request.requester_id === userId ||
+            requestMatches.some((match) => match.volunteer_id === userId);
+
+          return (
+            <View key={request.id} style={s.card}>
+              <Text style={s.meta}>
+                {request.help_type.replaceAll('_', ' ')} · {request.status.toUpperCase()}
+              </Text>
+              <Text style={s.cardTitle}>{request.title}</Text>
+              <Text style={s.body}>{request.description}</Text>
+              <Text style={s.meta}>
+                {request.neighborhood} · Requested by{' '}
+                {requesterNames[request.requester_id] ||
+                  (request.requester_id === userId ? displayName || 'You' : 'Neighbour')}
+              </Text>
+
+              {request.requester_id !== userId &&
+                request.status === 'open' &&
+                !myOffer &&
+                rulesAccepted && (
+                  <Button
+                    label={busyAction === request.id + ':offer' ? 'Sending offer…' : 'Offer to help'}
+                    disabled={Boolean(busyAction)}
+                    onPress={() => offerToHelp(request.id)}
+                  />
+                )}
+
+              {myOffer?.status === 'pending' &&
+                request.requester_id !== userId && (
+                  <>
+                    <Text style={s.meta}>Your offer is waiting for a response.</Text>
+                    <Button
+                      soft
+                      label="Withdraw offer"
+                      disabled={Boolean(busyAction)}
+                      onPress={() => updateMatch(myOffer, 'cancelled')}
+                    />
+                  </>
+                )}
+
+              {pendingOffers.map((offer) => (
+                <View key={offer.id} style={[s.card, { backgroundColor: C.cream }]}>
+                  <Text style={s.bold}>
+                    Offer from {requesterNames[offer.volunteer_id] || 'a neighbour'}
+                  </Text>
+                  <Button
+                    label="Accept volunteer"
+                    disabled={
+                      request.status !== 'open' ||
+                      Boolean(busyAction) ||
+                      !rulesAccepted
+                    }
+                    onPress={() => updateMatch(offer, 'accepted')}
+                  />
+                  <Button
+                    soft
+                    label="Decline offer"
+                    disabled={Boolean(busyAction)}
+                    onPress={() => updateMatch(offer, 'rejected')}
+                  />
+                </View>
+              ))}
+
+              {acceptedMatch && (
+                <View style={[s.card, { backgroundColor: C.cream }]}>
+                  <Text style={s.bold}>
+                    Volunteer: {requesterNames[acceptedMatch.volunteer_id] || 'Neighbour'}
+                  </Text>
+                  {acceptedMatch.status === 'accepted' && isParticipant && (
+                    <>
+                      <Text style={s.meta}>Help is matched. Mark it complete when you are both done.</Text>
+                      <Button
+                        label={
+                          busyAction === acceptedMatch.id + ':completed'
+                            ? 'Saving…'
+                            : 'Confirm completion'
+                        }
+                        disabled={Boolean(busyAction) || !rulesAccepted}
+                        onPress={() => updateMatch(acceptedMatch, 'completed')}
+                      />
+                      <Button
+                        soft
+                        label="Cancel match"
+                        disabled={Boolean(busyAction)}
+                        onPress={() => updateMatch(acceptedMatch, 'cancelled')}
+                      />
+                    </>
+                  )}
+                  {acceptedMatch.status === 'completed' && (
+                    <>
+                      <Text style={s.meta}>Help completed · rate your experience</Text>
+                      {requestReviews.map((review) => (
+                        <Text key={review.id} style={s.meta}>
+                          {review.reviewer_id === userId
+                            ? 'Your rating'
+                            : (requesterNames[review.reviewer_id] || 'Neighbour') + ' rated'}
+                          : {review.rating}/5
+                          {review.reason ? ' · ' + review.reason : ''}
+                        </Text>
+                      ))}
+                      {myReview ? (
+                        <Text style={s.meta}>You have submitted your rating.</Text>
+                      ) : reviewingRequest === request.id ? (
+                        <>
+                          <Choices
+                            title="Rate your experience"
+                            values={['1', '2', '3', '4', '5']}
+                            labels={['1 ★', '2 ★', '3 ★', '4 ★', '5 ★']}
+                            value={stars}
+                            change={setStars}
+                          />
+                          <TextInput
+                            style={s.input}
+                            multiline
+                            placeholder={
+                              Number(stars) > 0 && Number(stars) < 4
+                                ? 'Reason required for 1–3 stars'
+                                : 'Comment (optional)'
+                            }
+                            maxLength={1000}
+                            value={reviewReason}
+                            onChangeText={setReviewReason}
+                          />
+                          <Button
+                            label={
+                              busyAction === request.id + ':review'
+                                ? 'Saving rating…'
+                                : 'Submit rating'
+                            }
+                            disabled={
+                              Boolean(busyAction) ||
+                              !stars ||
+                              (Number(stars) < 4 && !reviewReason.trim())
+                            }
+                            onPress={() => submitReview(request, acceptedMatch)}
+                          />
+                          <Button
+                            soft
+                            label="Cancel rating"
+                            onPress={() => setReviewingRequest(null)}
+                          />
+                        </>
+                      ) : (
+                        <Button
+                          label="Rate this experience"
+                          disabled={!rulesAccepted}
+                          onPress={() => {
+                            setReviewingRequest(request.id);
+                            setStars('');
+                            setReviewReason('');
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                </View>
+              )}
+            </View>
+          );
+        })
       ) : (
         <View style={s.card}>
           <Text style={s.body}>No help requests yet. You can post the first one.</Text>
