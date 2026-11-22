@@ -2871,6 +2871,7 @@ export default function CoucouSocial() {
     };
   }, [currentUserId]);
   const [bioDraft, setBioDraft] = useState('');
+  const [nameDraft, setNameDraft] = useState('');
   const [visitedHelp, setVisitedHelp] = useState(false);
   const close = () => setModal(null);
   const go = (next) => setTrail((prev) => [...prev, next]);
@@ -3098,9 +3099,25 @@ export default function CoucouSocial() {
                     onPress={changeProfilePicture}
                   />
                 )}
-                <Text style={s.title}>
-                  {author?.name ?? currentProfile?.display_name ?? 'My profile'}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={[s.title, { flexShrink: 1 }]}>
+                    {author?.name ?? currentProfile?.display_name ?? 'My profile'}
+                  </Text>
+                  {!author && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Edit your name"
+                      hitSlop={12}
+                      onPress={() => {
+                        setNameDraft(currentProfile?.display_name ?? '');
+                        setModal('name');
+                      }}
+                      style={({ pressed }) => [{ padding: 4 }, pressed && { opacity: 0.5 }]}
+                    >
+                      <Feather name="edit-2" size={20} color={C.text} />
+                    </Pressable>
+                  )}
+                </View>
                 <Text style={s.meta}>
                   {author
                     ? author.role + ' · ' + author.area
@@ -3458,6 +3475,46 @@ export default function CoucouSocial() {
                       close();
                       setTrail([]);
                       setTab('Feed');
+                    }}
+                  />
+                </>
+              ) : modal === 'name' ? (
+                <>
+                  <Text style={s.title}>Edit your name</Text>
+                  <TextInput
+                    accessibilityLabel="Your name"
+                    style={s.input}
+                    value={nameDraft}
+                    onChangeText={setNameDraft}
+                    maxLength={80}
+                    autoFocus
+                  />
+                  <Button
+                    label={profileSaving ? 'Saving…' : 'Save'}
+                    disabled={profileSaving || !nameDraft.trim()}
+                    onPress={async () => {
+                      const nextName = nameDraft.trim();
+                      if (!currentUserId || !nextName) return;
+                      setProfileSaving(true);
+                      try {
+                        const { error } = await supabase
+                          .from('profiles')
+                          .update({ display_name: nextName })
+                          .eq('id', currentUserId);
+                        if (error) throw error;
+                        // Keep the member/volunteer records in step (only your own row).
+                        await Promise.all([
+                          supabase.from('members').update({ display_name: nextName }).eq('id', currentUserId),
+                          supabase.from('volunteers').update({ display_name: nextName }).eq('id', currentUserId),
+                        ]);
+                        setCurrentProfile((profile) => ({ ...profile, display_name: nextName }));
+                        setNotice('Name saved.');
+                        close();
+                      } catch (saveError) {
+                        setNotice(getErrorMessage(saveError, 'Could not save your name.'));
+                      } finally {
+                        setProfileSaving(false);
+                      }
                     }}
                   />
                 </>
