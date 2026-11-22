@@ -20,6 +20,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { makeStyles, useCoucouTheme } from '../theme/coucou';
+import { STRINGS } from './strings';
 
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 // The live room page (voice + speaking avatars) is hosted with our website and
@@ -982,15 +983,16 @@ function Clubs({ userId, role, blocked }) {
 }
 
 // ---------------- Discover ----------------
-export default function Community({ userId, role, blocked = [], renderPeople }) {
+export default function Community({ userId, role, blocked = [], renderPeople, language = 'en' }) {
   const [section, setSection] = useState('Posts');
   const st = useStyles();
+  const t = STRINGS[language];
   return (
     <View style={{ gap: 14 }}>
-      <Text style={st.title}>Discover</Text>
+      <Text style={st.title}>{t.discover}</Text>
       <View style={st.row}>
         {['Posts', 'Clubs', 'People'].map((name) => (
-          <Pill key={name} label={name} active={section === name} onPress={() => setSection(name)} />
+          <Pill key={name} label={t.discoverSections[name]} active={section === name} onPress={() => setSection(name)} />
         ))}
       </View>
       {!userId ? (

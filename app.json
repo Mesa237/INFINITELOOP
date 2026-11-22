@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "CouCouMontreal",
+    "name": "CouCouMTL",
     "slug": "coucoumontreal",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -34,7 +34,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow CouCou Montréal to use a photo as your profile picture.",
+          "photosPermission": "Allow CouCouMTL to use your photos for your profile picture and posts.",
           "microphonePermission": false
         }
       ],

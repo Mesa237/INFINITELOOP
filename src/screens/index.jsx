@@ -20,10 +20,14 @@ import PublicServices from './public-services';
 import Community from './community';
 import {
   makeStyles,
+  setEasyView,
+  setLanguage,
   setThemeMode,
   THEME_MODES,
+  useAppPrefs,
   useCoucouTheme,
 } from '../theme/coucou';
+import { STRINGS } from './strings';
 import { setActivePortal } from '../../lib/portal';
 // Montréal neighbourhoods for the area filter (real place names, no sample data).
 const areas = [
@@ -125,6 +129,7 @@ function Choices({ title, values, labels, value, change }) {
   );
 }
 function HelpOfferInbox({
+  language = 'en',
   isActive,
   onOpenChat,
   onOpenRequest,
@@ -451,7 +456,7 @@ function HelpOfferInbox({
 
   return (
     <View style={s.card}>
-      <Text style={s.section}>Inbox</Text>
+      <Text style={s.section}>{STRINGS[language].inbox}</Text>
       {loading && <Text style={s.meta}>Loading notifications…</Text>}
       {!!error && (
         <Text accessibilityLiveRegion="polite" style={{ color: C.error }}>
@@ -1471,16 +1476,6 @@ const POSTER_THEMES = [
   { bg: '#0E9F8E', ink: '#FFFFFF', accent: '#FFDF46', soft: '#C7F2EC' },
   { bg: '#20211C', ink: '#FFFDF4', accent: '#D8C2F4', soft: '#BDBEAF' },
 ];
-// Witty hook per kind of help: small line + big emphasised line.
-const POSTER_HOOKS = {
-  appointments: ['Nobody should go', 'ALONE.'],
-  paperwork: ['Forms in French?', 'WE GOT THIS.'],
-  transportation: ['Need a lift?', 'HOP IN.'],
-  companionship: ['Coffee tastes better', 'TOGETHER.'],
-  language_practice: ['Parlons un peu,', 'MON AMI!'],
-  technology: ['Tech trouble?', 'NO DRAMA.'],
-  other: ['A neighbour', 'NEEDS YOU.'],
-};
 
 function PosterAvatar({ name, url, theme }) {
   const size = 112;
@@ -1520,9 +1515,10 @@ function PosterAvatar({ name, url, theme }) {
   );
 }
 
-function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
+function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers, language = 'en' }) {
+  const P = STRINGS[language].poster;
   const theme = POSTER_THEMES[index % POSTER_THEMES.length];
-  const [small, big] = POSTER_HOOKS[row.help_type] ?? POSTER_HOOKS.other;
+  const [small, big] = P.hooks[row.help_type] ?? P.hooks.other;
   const firstName = (person?.display_name || 'A neighbour').split(/\s+/)[0];
   return (
     <Pressable
@@ -1602,13 +1598,13 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
           </View>
           <Text style={{ color: theme.ink, fontWeight: '800', fontSize: 13 }}>
             {matchers.length === 1
-              ? matchers[0].display_name.split(/\s+/)[0] + ' has the skills you need'
+              ? matchers[0].display_name.split(/\s+/)[0] + P.hasSkills
               : matchers
                   .slice(0, 2)
                   .map((m) => m.display_name.split(/\s+/)[0])
                   .join(', ') +
-                (matchers.length > 2 ? ' & ' + (matchers.length - 2) + ' more' : '') +
-                ' have the skills you need'}
+                (matchers.length > 2 ? P.more(matchers.length - 2) : '') +
+                P.haveSkills}
           </Text>
         </View>
       )}
@@ -1625,16 +1621,16 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
         >
           {isVolunteer
             ? row.matched_skills?.length
-              ? 'Matches you: ' +
+              ? P.matchesYou +
                 row.matched_skills
                   .map((k) => SKILL_OPTIONS.find(([v]) => v === k)?.[1] ?? k)
                   .join(', ')
-              : firstName + ' is waiting.'
+              : P.isWaiting(firstName)
             : row.status === 'matched'
-              ? 'A volunteer is helping you.'
+              ? P.helping
               : row.status === 'completed'
-                ? 'Done. Thank you!'
-                : 'Your request is live.'}
+                ? P.done
+                : P.live}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', gap: 6 }}>
           <Text
@@ -1659,7 +1655,7 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
               marginBottom: 3,
             }}
           >
-            {isVolunteer ? '& lend a hand!' : '& see your offers!'}
+            {isVolunteer ? P.ctaVolunteer : P.ctaMember}
           </Text>
           <Feather
             name="arrow-up-right"
@@ -1725,6 +1721,49 @@ const LANGUAGE_OPTIONS = [
   ['ta', 'Tamil'], ['vi', 'Vietnamese'], ['ko', 'Korean'], ['he', 'Hebrew'],
   ['other', 'Other'],
 ];
+
+// ---- Verified volunteer: 3+ reviews averaging 4 stars or more ----
+const ratingCache = new Map();
+function isVerified(rating) {
+  return Number(rating?.review_count) >= 3 && Number(rating?.average_rating) >= 4;
+}
+function VerifiedBadge({ userId, rating, language = 'en' }) {
+  const { C } = useCoucouTheme();
+  const [loaded, setLoaded] = useState(rating ?? ratingCache.get(userId) ?? null);
+  useEffect(() => {
+    if (rating || !userId || ratingCache.has(userId)) return;
+    let active = true;
+    supabase.rpc('get_profile_rating', { target_profile_id: userId }).then(({ data }) => {
+      const row = data?.[0] ?? null;
+      ratingCache.set(userId, row);
+      if (active) setLoaded(row);
+    });
+    return () => {
+      active = false;
+    };
+  }, [userId, rating]);
+  if (!isVerified(rating ?? loaded)) return null;
+  return (
+    <View
+      accessibilityLabel={STRINGS[language].verified}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        alignSelf: 'flex-start',
+        backgroundColor: '#2B3FD6',
+        borderRadius: 999,
+        paddingHorizontal: 9,
+        paddingVertical: 4,
+      }}
+    >
+      <Feather name="check-circle" size={13} color="#FFFFFF" />
+      <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>
+        {STRINGS[language].verified}
+      </Text>
+    </View>
+  );
+}
 
 function MultiChoice({ title, hint, options, values, change, max }) {
   const s = useS();
@@ -2018,7 +2057,7 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
 
 // Real help requests for the home feed. Row-level security decides what each
 // person sees: volunteers see open requests, members see their own.
-function LatestRequests({ area, blocked, role, onOpen, mode }) {
+function LatestRequests({ area, blocked, role, onOpen, mode, language = 'en' }) {
   const s = useS();
   const { C } = useCoucouTheme();
   const [rows, setRows] = useState([]);
@@ -2128,6 +2167,7 @@ function LatestRequests({ area, blocked, role, onOpen, mode }) {
       isVolunteer={isVolunteer}
       onOpen={onOpen}
       matchers={matchers[row.id]}
+      language={language}
     />
   );
   if (!isVolunteer) return visible.map(poster);
@@ -2137,11 +2177,11 @@ function LatestRequests({ area, blocked, role, onOpen, mode }) {
   return (
     <>
       {!!skillMatches.length && (
-        <Text style={s.section}>Matches your skills</Text>
+        <Text style={s.section}>{STRINGS[language].matchesYourSkills}</Text>
       )}
       {skillMatches.map(poster)}
       {!!others.length && !!skillMatches.length && (
-        <Text style={s.section}>Other requests nearby</Text>
+        <Text style={s.section}>{STRINGS[language].otherRequests}</Text>
       )}
       {others.map((row, i) => poster(row, skillMatches.length + i))}
     </>
@@ -2832,6 +2872,10 @@ function CommunityBoard({
                       </>
                     ) : null}
                   </Text>
+                  <VerifiedBadge
+                    userId={offer.volunteer_id}
+                    rating={ratingsByProfile[offer.volunteer_id]}
+                  />
                   <Button
                     label="Accept volunteer"
                     disabled={
@@ -3209,6 +3253,8 @@ function getErrorMessage(error, fallback) {
 }
 export default function CoucouSocial() {
   const { C, mode: themeMode } = useCoucouTheme();
+  const { easy, language } = useAppPrefs();
+  const t = STRINGS[language];
   const s = useS();
   const social = useSocial();
   const [tab, setTab] = useState('Feed');
@@ -3726,6 +3772,12 @@ export default function CoucouSocial() {
                     )}
                   </Text>
                 )}
+                {!author && isVerified(profileRating) && (
+                  <VerifiedBadge rating={profileRating} language={language} />
+                )}
+                {author?.id && (
+                  <VerifiedBadge userId={author.id} language={language} />
+                )}
                 <Text style={s.body}>
                   {(author?.bio ?? bio) || 'Add a short bio to introduce yourself.'}
                 </Text>
@@ -3769,26 +3821,41 @@ export default function CoucouSocial() {
                 ) : (
                   <>
                     <Choices
-                      title="Appearance"
+                      title={t.appearance}
                       values={THEME_MODES}
-                      labels={['Light', 'Dark', 'Auto']}
+                      labels={t.themeLabels}
                       value={themeMode}
                       change={setThemeMode}
                     />
+                    <Choices
+                      title={t.easyView}
+                      values={['off', 'on']}
+                      labels={[t.easyOff, t.easyOn]}
+                      value={easy ? 'on' : 'off'}
+                      change={(v) => setEasyView(v === 'on')}
+                    />
+                    <Text style={s.meta}>{t.easyHint}</Text>
+                    <Choices
+                      title={t.languageTitle}
+                      values={['en', 'fr']}
+                      labels={['English', 'Français']}
+                      value={language}
+                      change={setLanguage}
+                    />
                     <Button
                       soft
-                      label="Community rules"
+                      label={t.rules}
                       onPress={() => setModal('rules')}
                     />
                     {['volunteer', 'both'].includes(currentProfile?.role) && (
                       <Button
-                        label="Volunteer dashboard"
+                        label={t.volunteerDashboard}
                         onPress={() => go({ kind: 'dashboard' })}
                       />
                     )}
                     <Button
                       soft
-                      label="Sign out"
+                      label={t.signOut}
                       onPress={async () => {
                         const { error } = await supabase.auth.signOut();
                         if (error) setNotice(error.message);
@@ -3796,7 +3863,7 @@ export default function CoucouSocial() {
                     />
                     <Button
                       soft
-                      label="Change role"
+                      label={t.changeRole}
                       onPress={() => setModal('role')}
                     />
                   </>
@@ -3817,26 +3884,26 @@ export default function CoucouSocial() {
               <>
                 <View style={s.hero}>
                   <Image source={require('../../assets/images/logo.jpg')} style={s.heroLogo} resizeMode="contain" />
-                  <Text style={s.eyebrow}>MONTRÉAL</Text>
+                  <Text style={s.eyebrow}>{t.eyebrow}</Text>
                   <Text style={[s.heroTitle, { fontFamily: POSTER_FONT, textTransform: 'uppercase' }]}>
                     {currentProfile?.role === 'volunteer' || currentProfile?.role === 'both'
-                      ? 'Someone nearby\nneeds you.'
-                      : 'Ask. Get help.\nSay coucou.'}
+                      ? t.heroVolunteer
+                      : t.heroMember}
                   </Text>
                 </View>
                 <View style={s.header}>
                   <Text style={s.section}>
                     {currentProfile?.role === 'volunteer' || currentProfile?.role === 'both'
-                      ? 'People who need help'
-                      : 'Your requests'}
+                      ? t.peopleWhoNeedHelp
+                      : t.yourRequests}
                   </Text>
                   <Button
                     label={
                       currentProfile?.role === 'volunteer'
-                        ? 'Open board'
+                        ? t.openBoard
                         : currentProfile?.role === 'both'
-                          ? 'Board / ask'
-                          : '+ Ask for help'
+                          ? t.boardAsk
+                          : t.askForHelp
                     }
                     onPress={() => openHelp()}
                   />
@@ -3844,11 +3911,12 @@ export default function CoucouSocial() {
                 {['volunteer', 'both'].includes(currentProfile?.role) && (
                   <Button
                     soft
-                    label="Volunteer dashboard: your skills & matches"
+                    label={t.dashboardNudge}
                     onPress={() => go({ kind: 'dashboard' })}
                   />
                 )}
                 <LatestRequests
+                  language={language}
                   area={area}
                   blocked={blocked}
                   role={currentProfile?.role}
@@ -3856,8 +3924,9 @@ export default function CoucouSocial() {
                 />
                 {currentProfile?.role === 'both' && (
                   <>
-                    <Text style={s.section}>Your requests</Text>
+                    <Text style={s.section}>{t.yourRequests}</Text>
                     <LatestRequests
+                      language={language}
                       mode="mine"
                       area={area}
                       blocked={blocked}
@@ -3869,6 +3938,7 @@ export default function CoucouSocial() {
               </>
             ) : tab === 'Discover' ? (
               <Community
+                language={language}
                 userId={currentUserId}
                 role={currentProfile?.role}
                 blocked={blocked}
@@ -3902,6 +3972,7 @@ export default function CoucouSocial() {
                     <Text style={s.meta}>
                       {p.area} · {p.role}
                     </Text>
+                    <VerifiedBadge userId={p.id} language={language} />
                   </Pressable>
                 ))}
                 {!filteredPeople.length && !peopleLoading && !peopleError && (
@@ -3914,6 +3985,7 @@ export default function CoucouSocial() {
               <>
                 <Text style={s.title}>Inbox</Text>
                 <HelpOfferInbox
+                  language={language}
                   isActive={!detail && tab === 'Inbox'}
                   onOpenChat={(matchId, name) =>
                     go({ kind: 'match-chat', matchId, name })
@@ -3949,7 +4021,7 @@ export default function CoucouSocial() {
                 color={t === tab ? C.onPrimary : C.muted}
               />
               <Text style={[s.tabLabel, t === tab ? { color: C.onPrimary } : { color: C.muted }]}>
-                {t}
+                {STRINGS[language].tabs[t]}
               </Text>
               {t === 'Inbox' && unreadCount > 0 && (
                 <View

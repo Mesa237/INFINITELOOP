@@ -108,23 +108,82 @@ function subscribe(listener) {
   return () => listeners.delete(listener);
 }
 
+// ---- Easy view (bigger text for elders) and app language, saved like the theme ----
+const EASY_KEY = 'coucou.easyView';
+const LANG_KEY = 'coucou.language';
+function readSaved(key, fallback) {
+  try {
+    return supabaseStorage?.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+let easy = readSaved(EASY_KEY, '0') === '1';
+let language = readSaved(LANG_KEY, 'en') === 'fr' ? 'fr' : 'en';
+
+export function setEasyView(next) {
+  easy = !!next;
+  try {
+    supabaseStorage?.setItem(EASY_KEY, easy ? '1' : '0');
+  } catch {
+    // Applied for this session.
+  }
+  listeners.forEach((listener) => listener());
+}
+export function setLanguage(next) {
+  language = next === 'fr' ? 'fr' : 'en';
+  try {
+    supabaseStorage?.setItem(LANG_KEY, language);
+  } catch {
+    // Applied for this session.
+  }
+  listeners.forEach((listener) => listener());
+}
+export function useAppPrefs() {
+  const snapshot = useSyncExternalStore(
+    subscribe,
+    () => (easy ? 'e' : 'n') + language,
+    () => 'nen',
+  );
+  return { easy: snapshot[0] === 'e', language: snapshot.slice(1) };
+}
+
 export function useCoucouTheme() {
   const themeMode = useSyncExternalStore(
     subscribe,
     () => mode,
     () => 'auto',
   );
+  const { easy: easyView } = useAppPrefs();
   const system = useColorScheme();
   const scheme =
     themeMode === 'auto' ? (system === 'dark' ? 'dark' : 'light') : themeMode;
-  return { C: PALETTES[scheme], scheme, mode: themeMode };
+  return { C: PALETTES[scheme], scheme, mode: themeMode, easy: easyView };
+}
+
+// Easy view: larger text and roomier buttons everywhere styles come from makeStyles.
+const EASY_TEXT = 1.22;
+function enlarge(styles) {
+  const out = {};
+  Object.entries(styles).forEach(([name, style]) => {
+    const next = { ...style };
+    if (typeof next.fontSize === 'number') next.fontSize = Math.round(next.fontSize * EASY_TEXT);
+    if (typeof next.lineHeight === 'number') next.lineHeight = Math.round(next.lineHeight * EASY_TEXT);
+    if (typeof next.paddingVertical === 'number') next.paddingVertical = Math.round(next.paddingVertical * 1.25);
+    if (typeof next.minHeight === 'number') next.minHeight = Math.round(next.minHeight * 1.15);
+    out[name] = next;
+  });
+  return out;
 }
 
 // Build a StyleSheet once per palette: const useS = makeStyles((C) => ({ ... }));
 export function makeStyles(factory) {
   const cache = {};
   return function useStyles() {
-    const { C } = useCoucouTheme();
-    return (cache[C.name] ??= StyleSheet.create(factory(C)));
+    const { C, easy: easyView } = useCoucouTheme();
+    const key = C.name + (easyView ? ':easy' : '');
+    return (cache[key] ??= StyleSheet.create(
+      easyView ? enlarge(factory(C)) : factory(C),
+    ));
   };
 }
