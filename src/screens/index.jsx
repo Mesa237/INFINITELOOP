@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -101,6 +102,17 @@ const GROUPS = [
     description: 'Find a conversation partner in Québec City.',
   },
 ];
+// The app has no language setting yet; the post language defaults to English.
+const APP_LANGUAGE = 'en';
+const HELP_TYPES = [
+  'appointments',
+  'paperwork',
+  'transportation',
+  'companionship',
+  'language_practice',
+  'technology',
+  'other',
+];
 const RULES =
   'Treat other members with respect, protect their privacy, and report abuse.';
 const members = ['', 'You', 'Camille', 'Noor', 'Lou'];
@@ -196,6 +208,15 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('companionship');
   const [editing, setEditing] = useState(false);
+  // AI post assistant (supabase/functions/draft-request).
+  const [aiText, setAiText] = useState('');
+  const [postLanguage, setPostLanguage] = useState(APP_LANGUAGE === 'fr' ? 'fr' : 'en');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiUrgent, setAiUrgent] = useState(false);
+  const [aiHints, setAiHints] = useState([]);
+  const [neededSkills, setNeededSkills] = useState([]);
+  const [detectedLanguage, setDetectedLanguage] = useState(null);
   const [reviewingRequest, setReviewingRequest] = useState(null);
   const [stars, setStars] = useState('');
   const [reviewReason, setReviewReason] = useState('');
@@ -307,6 +328,42 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
     };
   }, [reloadKey]);
 
+  async function writeDraft() {
+    const text = aiText.trim();
+    if (!text || aiBusy) return;
+    setAiBusy(true);
+    setAiError('');
+    setAiUrgent(false);
+    setAiHints([]);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        'draft-request',
+        { body: { text, postLanguage } },
+      );
+      const draft = data?.draft;
+      if (invokeError || data?.error || !draft) throw invokeError ?? new Error('No draft');
+
+      if (draft.urgent === true) {
+        setAiUrgent(true);
+        return;
+      }
+      if (draft.title) setTitle(String(draft.title).slice(0, 120));
+      if (HELP_TYPES.includes(draft.help_type)) setCategory(draft.help_type);
+      if (draft.description) setDescription(String(draft.description).slice(0, 2000));
+      setAiHints(
+        Array.isArray(draft.missing_info) ? draft.missing_info.slice(0, 2) : [],
+      );
+      setNeededSkills(Array.isArray(draft.needed_skills) ? draft.needed_skills : []);
+      setDetectedLanguage(draft.detected_language || null);
+    } catch {
+      setAiError(
+        "The assistant isn't available right now. You can write your post yourself.",
+      );
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
   async function publishRequest() {
     const cleanTitle = title.trim();
     const cleanDescription = description.trim();
@@ -329,6 +386,8 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
           help_type: category,
           neighborhood,
           status: 'open',
+          needed_skills: neededSkills ?? [],
+          preferred_language: detectedLanguage || null,
         })
         .select(
           'id, requester_id, title, description, help_type, neighborhood, status, created_at',
@@ -344,6 +403,12 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
       setTitle('');
       setDescription('');
       setCategory('companionship');
+      setAiText('');
+      setAiError('');
+      setAiUrgent(false);
+      setAiHints([]);
+      setNeededSkills([]);
+      setDetectedLanguage(null);
       setEditing(false);
     } catch (submitError) {
       setError(
@@ -468,6 +533,45 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
       />
       {editing && (
         <View style={s.card}>
+          <Text style={s.bold}>Describe what you need, in any language</Text>
+          <TextInput
+            accessibilityLabel="Describe what you need, in any language"
+            style={s.input}
+            multiline
+            placeholderTextColor={C.placeholder}
+            placeholder="Write it the way you would say it"
+            value={aiText}
+            onChangeText={setAiText}
+            maxLength={3000}
+          />
+          <Choices
+            title="Post language"
+            values={['en', 'fr']}
+            labels={['English', 'Français']}
+            value={postLanguage}
+            change={setPostLanguage}
+          />
+          <Button
+            label={aiBusy ? 'Writing…' : 'Write my post'}
+            disabled={aiBusy || !aiText.trim()}
+            onPress={writeDraft}
+          />
+          {!!aiError && (
+            <Text accessibilityLiveRegion="polite" style={s.meta}>
+              {aiError}
+            </Text>
+          )}
+          {aiUrgent && (
+            <View accessibilityLiveRegion="assertive" style={[s.card, s.urgentCard]}>
+              <Text style={[s.bold, s.urgentText]}>
+                This sounds urgent. Call 911 now, or 811 for health advice.
+              </Text>
+              <View style={s.row}>
+                <Button label="Call 911" onPress={() => Linking.openURL('tel:911')} />
+                <Button label="Call 811" onPress={() => Linking.openURL('tel:811')} />
+              </View>
+            </View>
+          )}
           <TextInput
             style={s.input}
             placeholderTextColor={C.placeholder}
@@ -509,6 +613,11 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
             onChangeText={setDescription}
             maxLength={2000}
           />
+          {aiHints.map((hint) => (
+            <Text key={hint} style={s.meta}>
+              Tip: {hint}
+            </Text>
+          ))}
           <Button
             label={saving ? 'Publishing…' : 'Publish request'}
             disabled={
@@ -741,6 +850,8 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   );
 }
 const useS = makeStyles((C) => ({
+  urgentCard: { backgroundColor: C.invertBg, borderColor: C.invertBg },
+  urgentText: { color: C.invertText },
   page: { flex: 1, backgroundColor: C.page },
   content: {
     width: '100%',
