@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -192,7 +192,13 @@ function Communities() {
     </View>
   );
 }
-function HelpOfferInbox({ isActive, onOpenChat, onOpenRequest }) {
+function HelpOfferInbox({
+  isActive,
+  onOpenChat,
+  onOpenRequest,
+  onRefresh,
+  reloadKey,
+}) {
   const { C } = useCoucouTheme();
   const s = useS();
   const [notifications, setNotifications] = useState([]);
@@ -203,7 +209,6 @@ function HelpOfferInbox({ isActive, onOpenChat, onOpenRequest }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
-  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!isActive) return undefined;
@@ -339,7 +344,7 @@ function HelpOfferInbox({ isActive, onOpenChat, onOpenRequest }) {
                 table: 'user_notifications',
                 filter: `recipient_id=eq.${user.id}`,
               },
-              () => setReloadKey((key) => key + 1),
+              onRefresh,
             )
             .subscribe((status, subscriptionError) => {
               if (
@@ -367,7 +372,7 @@ function HelpOfferInbox({ isActive, onOpenChat, onOpenRequest }) {
       active = false;
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [isActive, reloadKey]);
+  }, [isActive, onRefresh, reloadKey]);
 
   async function markAsRead(notification) {
     if (notification.read_at || busyId) return;
@@ -443,11 +448,6 @@ function HelpOfferInbox({ isActive, onOpenChat, onOpenRequest }) {
       {!loading && !notifications.length && !chats.length && !error && (
         <Text style={s.body}>No notifications or accepted help conversations yet.</Text>
       )}
-      <Button
-        soft
-        label="Community help requests"
-        onPress={() => onOpenRequest()}
-      />
       {chats.length > 0 && (
         chats.map((chat) => (
           <View
@@ -520,13 +520,6 @@ function HelpOfferInbox({ isActive, onOpenChat, onOpenRequest }) {
             }
           </View>
         ))}
-      {!loading && (
-        <Button
-          soft
-          label="Refresh inbox"
-          onPress={() => setReloadKey((key) => key + 1)}
-        />
-      )}
     </View>
   );
 }
@@ -1758,6 +1751,11 @@ export default function CoucouSocial() {
   const s = useS();
   const social = useSocial();
   const [tab, setTab] = useState('Feed');
+  const [inboxReloadKey, setInboxReloadKey] = useState(0);
+  const refreshInbox = useCallback(
+    () => setInboxReloadKey((key) => key + 1),
+    [],
+  );
   const [trail, setTrail] = useState([]);
   const detail = trail[trail.length - 1];
   const [modal, setModal] = useState('location');
@@ -2421,6 +2419,8 @@ export default function CoucouSocial() {
                     go({ kind: 'match-chat', matchId, name })
                   }
                   onOpenRequest={(requestId) => openHelp(requestId)}
+                  onRefresh={refreshInbox}
+                  reloadKey={inboxReloadKey}
                 />
                 {Object.entries(threads)
                   .filter(([name]) => !blocked.includes(name))
@@ -2441,6 +2441,11 @@ export default function CoucouSocial() {
                       </Text>
                     </Pressable>
                   ))}
+                <Button
+                  soft
+                  label="Refresh inbox"
+                  onPress={refreshInbox}
+                />
               </>
             )}
           </ScrollView>
