@@ -1,3 +1,4 @@
+import { Image } from "react-native";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -5,36 +6,16 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { supabase } from '../../lib/supabase';
-import { makeStyles, useCoucouTheme } from '../theme/coucou';
-
-export default function AuthScreen() {
-  const { C } = useCoucouTheme();
-  const styles = useStyles();
-  const [mode, setMode] = useState('signin');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
-    getActivePortal,
-    setActivePortal,
-    validatePortalAccess,
+  getActivePortal,
+  setActivePortal,
+  validatePortalAccess,
 } from "../../lib/portal";
 import { supabase } from "../../lib/supabase";
 
@@ -98,7 +79,7 @@ export default function AuthScreen({ initialError, onClearError }) {
 
     setBusy(true);
     setActivePortal(accountType);
-    const profileRole = isBoth ? "both" : (isVolunteer ? "volunteer" : "seeker");
+    const profileRole = isBoth ? "both" : isVolunteer ? "volunteer" : "seeker";
 
     try {
       if (isSignUp) {
@@ -125,7 +106,7 @@ export default function AuthScreen({ initialError, onClearError }) {
             await supabase.auth.signOut();
             setIsError(true);
             setMessage(
-              `This email is already registered with a different role. You can only use the role you originally registered for.`
+              `This email is already registered with a different role. You can only use the role you originally registered for.`,
             );
             return;
           }
@@ -174,7 +155,7 @@ export default function AuthScreen({ initialError, onClearError }) {
           setPassword("");
         } else {
           setMessage(
-            `Welcome to the neighbourhood as ${isBoth ? "Member & Volunteer" : (isVolunteer ? "a Volunteer" : "a Member")}!`,
+            `Welcome to the neighbourhood as ${isBoth ? "Member & Volunteer" : isVolunteer ? "a Volunteer" : "a Member"}!`,
           );
         }
       } else {
@@ -194,7 +175,7 @@ export default function AuthScreen({ initialError, onClearError }) {
             setIsError(true);
             setMessage(
               validation.errorMessage ||
-                `This email cannot sign in as ${isBoth ? "Member & Volunteer" : (isVolunteer ? "a Volunteer" : "a Member")}.`
+                `This email cannot sign in as ${isBoth ? "Member & Volunteer" : isVolunteer ? "a Volunteer" : "a Member"}.`,
             );
             return;
           }
@@ -227,7 +208,11 @@ export default function AuthScreen({ initialError, onClearError }) {
     if (onClearError) onClearError();
   }
 
-  const roleLabel = isBoth ? "Member & Volunteer" : (isVolunteer ? "Volunteer" : "Member");
+  const roleLabel = isBoth
+    ? "Member & Volunteer"
+    : isVolunteer
+      ? "Volunteer"
+      : "Member";
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -240,9 +225,11 @@ export default function AuthScreen({ initialError, onClearError }) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.brandRow}>
-            <View style={styles.sun}>
-              <Text style={styles.sunGlyph}>☀</Text>
-            </View>
+            <Image
+              source={require('../../assets/images/logo.jpg')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
             <Text style={styles.brand}>
               CouCou<Text style={styles.brandAccent}>Montreal</Text>
             </Text>
@@ -253,14 +240,16 @@ export default function AuthScreen({ initialError, onClearError }) {
             <Text style={styles.title}>
               {isBoth
                 ? "Member & Volunteer"
-                : (isVolunteer ? "Volunteer Portal" : "Member Portal")}
+                : isVolunteer
+                  ? "Volunteer Portal"
+                  : "Member Portal"}
             </Text>
             <Text style={styles.subtitle}>
               {isBoth
                 ? "Get everyday support when you need it, and lend a hand to neighbours when you can."
-                : (isVolunteer
+                : isVolunteer
                   ? "Join our network of neighbourhood volunteers. Lend a hand and build community."
-                  : "Connect with local neighbours for friendship, conversation circles, and everyday help.")}
+                  : "Connect with local neighbours for friendship, conversation circles, and everyday help."}
             </Text>
           </View>
 
@@ -361,9 +350,9 @@ export default function AuthScreen({ initialError, onClearError }) {
               <Text style={styles.freeDesc}>
                 {isBoth
                   ? "Full dual access: you can post help requests and offer assistance to neighbours across all categories. Always 100% free."
-                  : (isVolunteer
+                  : isVolunteer
                     ? "Volunteers offer everyday assistance, appointments support, language practice, and social visits. Always completely free."
-                    : "Members can post help requests, join conversation circles, and meet local neighbours. Always completely free.")}
+                    : "Members can post help requests, join conversation circles, and meet local neighbours. Always completely free."}
               </Text>
             </View>
 
@@ -413,7 +402,7 @@ export default function AuthScreen({ initialError, onClearError }) {
                   autoComplete="name"
                   onChangeText={setName}
                   placeholder="How neighbours will know you"
-                  placeholderTextColor={C.placeholder}
+                  placeholderTextColor="#929287"
                   returnKeyType="next"
                   style={styles.input}
                   value={name}
@@ -430,7 +419,7 @@ export default function AuthScreen({ initialError, onClearError }) {
                 keyboardType="email-address"
                 onChangeText={setEmail}
                 placeholder="you@example.com"
-                placeholderTextColor={C.placeholder}
+                placeholderTextColor="#929287"
                 returnKeyType="next"
                 style={styles.input}
                 textContentType="emailAddress"
@@ -446,8 +435,6 @@ export default function AuthScreen({ initialError, onClearError }) {
                 autoComplete={isSignUp ? "new-password" : "current-password"}
                 onChangeText={setPassword}
                 onSubmitEditing={submit}
-                placeholder={isSignUp ? 'At least 6 characters' : 'Your password'}
-                placeholderTextColor={C.placeholder}
                 placeholder={
                   isSignUp ? "At least 6 characters" : "Your password"
                 }
@@ -482,7 +469,7 @@ export default function AuthScreen({ initialError, onClearError }) {
               ]}
             >
               {busy ? (
-                <ActivityIndicator color={C.onAccent} />
+                <ActivityIndicator color={palette.ink} />
               ) : (
                 <Text style={styles.submitText}>
                   {isSignUp
@@ -493,7 +480,8 @@ export default function AuthScreen({ initialError, onClearError }) {
             </Pressable>
 
             <Text style={styles.privacy}>
-              Accounts are bound to their chosen role. You can only sign in through the portal matching your registered role.
+              Accounts are bound to their chosen role. You can only sign in
+              through the portal matching your registered role.
             </Text>
           </View>
 
@@ -506,37 +494,9 @@ export default function AuthScreen({ initialError, onClearError }) {
   );
 }
 
-const useStyles = makeStyles((C) => ({
-  safe: { flex: 1, backgroundColor: C.page },
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: palette.cream },
   flex: { flex: 1 },
-  scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 28, width: '100%', maxWidth: 600, alignSelf: 'center' },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 32 },
-  sun: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.yellow, alignItems: 'center', justifyContent: 'center' },
-  sunGlyph: { color: C.onAccent, fontSize: 22 },
-  brand: { color: C.text, fontSize: 19, fontWeight: '800', letterSpacing: -0.5 },
-  brandAccent: { fontWeight: '500' },
-  intro: { marginBottom: 25 },
-  kicker: { color: C.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12 },
-  title: { color: C.text, fontSize: 34, fontWeight: '800', lineHeight: 39, letterSpacing: -1, maxWidth: 430 },
-  subtitle: { color: C.muted, fontSize: 16, lineHeight: 24, marginTop: 12, maxWidth: 450 },
-  card: { backgroundColor: C.card, borderColor: C.border, borderWidth: 1, borderRadius: 22, padding: 20, shadowColor: C.shadow, shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 7 }, elevation: 2 },
-  switcher: { flexDirection: 'row', padding: 4, borderRadius: 14, backgroundColor: C.track, marginBottom: 22 },
-  switchOption: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 44, borderRadius: 11, paddingHorizontal: 8 },
-  switchSelected: { backgroundColor: C.yellow },
-  switchText: { color: C.muted, fontSize: 14, fontWeight: '700' },
-  switchTextSelected: { color: C.onAccent },
-  fieldGroup: { marginBottom: 16 },
-  label: { color: C.text, fontSize: 14, fontWeight: '700', marginBottom: 7 },
-  input: { width: '100%', minHeight: 50, borderWidth: 1, borderColor: C.inputBorder, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: C.text, backgroundColor: C.inputBg, fontSize: 15 },
-  message: { fontSize: 13, lineHeight: 19, marginBottom: 14 },
-  error: { color: C.error },
-  success: { color: C.success },
-  submit: { minHeight: 52, borderRadius: 14, backgroundColor: C.yellow, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, marginTop: 2 },
-  submitText: { color: C.onAccent, fontSize: 15, fontWeight: '800' },
-  dimmed: { opacity: 0.6 },
-  privacy: { color: C.muted, fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 16 },
-  footer: { color: C.muted, fontSize: 13, textAlign: 'center', marginTop: 22 },
-}));
   scroll: {
     flexGrow: 1,
     justifyContent: "center",
@@ -551,6 +511,11 @@ const useStyles = makeStyles((C) => ({
     alignItems: "center",
     gap: 10,
     marginBottom: 28,
+  },
+  logo: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
   },
   sun: {
     width: 38,

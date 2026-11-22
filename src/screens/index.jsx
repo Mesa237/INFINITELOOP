@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -757,6 +758,8 @@ const useS = makeStyles((C) => ({
     gap: 8,
   },
   brand: { fontSize: 23, letterSpacing: -1, fontWeight: '900', color: C.text },
+  logoImg: { width: 28, height: 28, borderRadius: 8 },
+  heroLogo: { position: 'absolute', top: -10, right: -10, width: 130, height: 130, opacity: 0.25 },
   pill: {
     backgroundColor: C.lilac,
     borderRadius: 24,
@@ -1131,7 +1134,7 @@ export default function CoucouSocial() {
         {detail ? (
           <Button soft label="‹ Back" onPress={back} />
         ) : (
-          <Text style={s.brand}>☀ CouCouMTL</Text>
+          <Text style={s.brand}>          <Image source={require('../../assets/images/logo.jpg')} style={s.logoImg} resizeMode="contain" /> CouCouMTL</Text>
         )}
         <View style={social.topRight}>
           <Button
@@ -1335,7 +1338,7 @@ export default function CoucouSocial() {
             ) : tab === 'Feed' ? (
               <>
                 <View style={s.hero}>
-                  <Text style={s.heroMark}>☀</Text>
+                  <Image source={require('../../assets/images/logo.jpg')} style={s.heroLogo} resizeMode="contain" />
                   <Text style={s.eyebrow}>MONTRÉAL</Text>
                   <Text style={s.heroTitle}>Around the block.</Text>
                 </View>
@@ -1453,7 +1456,7 @@ export default function CoucouSocial() {
               keyboardShouldPersistTaps="handled"
             >
               <View style={s.header}>
-                <Text style={s.brand}>☀ CouCouMTL</Text>
+                <Text style={s.brand}>          <Image source={require('../../assets/images/logo.jpg')} style={s.logoImg} resizeMode="contain" /> CouCouMTL</Text>
                 <Button soft label="Close" onPress={close} />
               </View>
               {modal === 'location' ? (
