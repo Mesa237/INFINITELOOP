@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>CouCouMTL · Live club room</title>
+<style>
+  :root {
+    --page: #FFFDF4; --card: #FFFFFF; --text: #20211C; --muted: #55574E;
+    --border: #DEDED1; --yellow: #FFDF46; --lilac: #D8C2F4; --ink: #20211C;
+    --red: #E5412D; --soft: #F1E8FE;
+  }
+  [data-theme="dark"] {
+    --page: #15160F; --card: #22231C; --text: #F3F1E4; --muted: #BDBEAF;
+    --border: #3A3B32; --soft: #2E2C36;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--page); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { min-height: 100%; display: flex; flex-direction: column; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); gap: 16px; }
+  .top { display: flex; align-items: center; justify-content: space-between; }
+  .leave { border: 0; background: none; color: var(--red); font-weight: 800; font-size: 16px; display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+  .live { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; letter-spacing: 1.5px; color: var(--red); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+  h1 { margin: 0; font-family: "AvenirNextCondensed-Heavy", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+    font-weight: 900; font-size: 30px; line-height: 1.05; letter-spacing: -.5px; }
+  .sub { font-weight: 700; font-size: 15px; color: var(--muted); margin-top: 2px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--soft); color: var(--text); border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 800; margin-top: 8px; }
+  .label { font-size: 12px; font-weight: 900; letter-spacing: 1.5px; display: flex; justify-content: space-between; align-items: center; }
+  .label button { border: 0; background: none; color: var(--text); font-weight: 800; font-size: 13px; display: flex; gap: 5px; align-items: center; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px 8px; }
+  .tile { display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; }
+  .ring { position: relative; width: 68px; height: 68px; border-radius: 50%; padding: 3px; transition: box-shadow .12s, background .12s; }
+  .listeners .ring { width: 58px; height: 58px; }
+  .tile.speaking .ring { background: var(--yellow); box-shadow: 0 0 0 3px rgba(255,223,70,.5), 0 0 18px rgba(255,223,70,.95); }
+  .avatar { width: 100%; height: 100%; border-radius: 50%; background: var(--lilac); object-fit: cover;
+    display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 22px; color: var(--ink); overflow: hidden; border: 2px solid var(--page); }
+  .badge { position: absolute; bottom: -1px; right: -1px; width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; border: 2px solid var(--page); background: #6B6C63; color: #fff; }
+  .badge.on { background: #37A85A; }
+  .badge.hand { background: var(--yellow); color: var(--ink); }
+  .badge.host { left: -1px; right: auto; top: -1px; bottom: auto; background: var(--yellow); color: var(--ink); }
+  .badge svg { width: 13px; height: 13px; }
+  .name { font-weight: 700; font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .actions { grid-column: 1 / -1; background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .actions b { width: 100%; font-size: 14px; }
+  .mini { border: 0; border-radius: 999px; padding: 8px 12px; font-weight: 800; font-size: 13px; background: var(--soft); color: var(--text); }
+  .mini.red { background: var(--red); color: #fff; }
+  .float { position: sticky; bottom: 12px; align-self: center; display: flex; gap: 6px; background: #3A3B36; border-radius: 22px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+  .fbtn { border: 0; width: 56px; height: 48px; border-radius: 16px; background: transparent; color: #fff; display: flex; align-items: center; justify-content: center; }
+  .fbtn.active { background: var(--yellow); color: var(--ink); }
+  .fbtn svg { width: 22px; height: 22px; }
+  .sheet { background: var(--card); border-top: 1px solid var(--border); margin: 0 -18px calc(-18px - env(safe-area-inset-bottom)); padding: 14px 18px calc(18px + env(safe-area-inset-bottom)); }
+  .share { display: flex; gap: 18px; margin-top: 10px; }
+  .sbtn { border: 0; background: none; color: var(--text); display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; }
+  .sbtn span { width: 48px; height: 48px; border-radius: 50%; background: var(--soft); display: flex; align-items: center; justify-content: center; }
+  .btn { border: 0; border-radius: 999px; padding: 14px 20px; font-weight: 800; font-size: 15px;
+    display: inline-flex; align-items: center; gap: 8px; background: var(--ink); color: #fff; }
+  [data-theme="dark"] .btn { background: var(--yellow); color: var(--ink); }
+  .btn.soft { background: var(--soft); color: var(--text); }
+  .btn.red { background: var(--red); color: #fff; }
+  .note { color: var(--muted); font-size: 13px; font-weight: 600; text-align: center; }
+  .center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+  svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<audio id="sink" hidden></audio>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+(() => {
+  const ICON = {
+    mic: '<svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
+    micOff: '<svg viewBox="0 0 24 24"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
+    crown: '<svg viewBox="0 0 24 24"><path d="M2 18h20M3 7l5 5 4-7 4 7 5-5-2 11H5z"/></svg>',
+    hand: '<svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>',
+    phone: '<svg viewBox="0 0 24 24"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>',
+    share: '<svg viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>',
+    link: '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+    plus: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>',
+    exit: '<svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+  };
+  const cfg = window.COUCOU;
+  const app = document.getElementById('app');
+  const post = (type, extra) => window.ReactNativeWebView?.postMessage(JSON.stringify({ type, ...extra }));
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() || '').join('') || '?';
+
+  if (!cfg) {
+    app.innerHTML = '<div class="center"><h1>CouCouMTL</h1><p class="note">Open a live club session from the CouCouMTL app.</p></div>';
+    return;
+  }
+  document.documentElement.dataset.theme = cfg.theme === 'dark' ? 'dark' : 'light';
+
+  const db = supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
+    global: { headers: { Authorization: 'Bearer ' + cfg.accessToken } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  db.realtime.setAuth(cfg.accessToken);
+
+  const me = cfg.userId;
+  const isHost = cfg.userId === cfg.hostId;
+  const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }].concat(cfg.turn || []) };
+  const peers = new Map();       // id -> { pc, pending: [], audio }
+  const people = new Map();      // id -> { name, avatar, muted, host }
+  const levels = new Map();      // id -> analyser
+  let local = null, channel = null, muted = true, joined = false, audioCtx = null, myProfile = null;
+  let role = isHost ? 'host' : 'listener', hand = false, selected = null, inviteOpen = false;
+
+  function renderIntro(msg) {
+    app.innerHTML = `
+      <div class="top"><button class="leave" id="leave0">${ICON.phone} Back</button>
+        <div class="live"><span class="dot"></span>LIVE</div></div>
+      <div><h1>${esc(cfg.title)}</h1><div class="sub">${esc(cfg.clubName)}</div>
+        ${cfg.category ? `<span class="chip">${esc(cfg.category)}</span>` : ''}</div>
+      <div class="center">
+        <p class="note">${esc(msg || (isHost ? 'You are the host. You start as a speaker; others join as listeners and raise a hand to speak.' : 'You join as a listener. Raise your hand and the host can invite you to speak.'))}</p>
+        <button class="btn" id="join">${ICON.mic} Join the room</button>
+      </div>`;
+    document.getElementById('join').onclick = join;
+    document.getElementById('leave0').onclick = () => post('leave');
+  }
+
+  function tileHtml(id) {
+    const p = people.get(id);
+    const av = p.avatar ? `<img class="avatar" src="${esc(p.avatar)}" alt="">` : `<div class="avatar">${esc(initials(p.name))}</div>`;
+    const talker = p.role !== 'listener';
+    const badge = p.hand && !talker
+      ? `<div class="badge hand">${ICON.hand}</div>`
+      : talker ? `<div class="badge ${p.muted ? '' : 'on'}">${p.muted ? ICON.micOff : ICON.mic}</div>` : '';
+    return `<div class="tile" id="t-${id}" data-pick="${id}">
+        <div class="ring">${av}${p.role === 'host' ? `<div class="badge host">${ICON.crown}</div>` : ''}${badge}</div>
+        <div class="name">${esc(id === me ? 'You' : p.name.split(/\s+/)[0])}</div>
+      </div>`;
+  }
+  function actionsHtml(id) {
+    const p = people.get(id);
+    if (!p || !isHost || id === me) return '';
+    const btns = p.role === 'listener'
+      ? `<button class="mini" data-act="host-promote" data-id="${id}">Invite to speak</button>`
+      : `${p.muted ? '' : `<button class="mini" data-act="host-mute" data-id="${id}">Mute</button>`}
+         <button class="mini" data-act="host-demote" data-id="${id}">Move to listeners</button>`;
+    return `<div class="actions"><b>${esc(p.name)}${p.hand ? ' raised a hand' : ''}</b>${btns}
+      <button class="mini red" data-act="host-kick" data-id="${id}">Remove</button></div>`;
+  }
+  function section(ids) {
+    // Put the action panel right after the row that holds the picked person.
+    let html = '';
+    ids.forEach((id, i) => {
+      html += tileHtml(id);
+      const rowEnd = i % 4 === 3 || i === ids.length - 1;
+      const pickedHere = selected && ids.slice(i - (i % 4), i + 1).includes(selected);
+      if (rowEnd && pickedHere) html += actionsHtml(selected);
+    });
+    return html;
+  }
+
+  function render() {
+    if (!joined) return;
+    const all = [...people.keys()];
+    const order = (a, b) => (a === me ? -1 : b === me ? 1 : people.get(a).name.localeCompare(people.get(b).name));
+    const speakers = all.filter((id) => people.get(id).role !== 'listener')
+      .sort((a, b) => (people.get(b).role === 'host') - (people.get(a).role === 'host') || order(a, b));
+    const listeners = all.filter((id) => people.get(id).role === 'listener')
+      .sort((a, b) => (people.get(b).hand - people.get(a).hand) || order(a, b));
+    const canTalk = role !== 'listener';
+    app.innerHTML = `
+      <div class="top">
+        <button class="leave" id="leave">${ICON.phone} Leave</button>
+        <div class="live"><span class="dot"></span>LIVE · ${people.size}</div>
+      </div>
+      <div>
+        <h1>${esc(cfg.title)}</h1>
+        <div class="sub">${esc(cfg.clubName)}</div>
+        ${cfg.category ? `<span class="chip">${esc(cfg.category)}</span>` : ''}
+      </div>
+      <div class="label">HOST AND SPEAKERS</div>
+      <div class="grid">${section(speakers)}</div>
+      <div class="label">LISTENERS <button id="invite">${ICON.plus} Invite</button></div>
+      <div class="grid listeners">${listeners.length ? section(listeners) : '<p class="note" style="grid-column:1/-1;text-align:left">No listeners yet.</p>'}</div>
+      ${isHost ? '<p class="note">Tap someone to invite them to speak, mute or remove them.</p>' : ''}
+      <div class="float">
+        ${canTalk
+          ? `<button class="fbtn ${muted ? '' : 'active'}" id="mute" aria-label="${muted ? 'Unmute' : 'Mute'}">${muted ? ICON.micOff : ICON.mic}</button>`
+          : `<button class="fbtn ${hand ? 'active' : ''}" id="hand" aria-label="Raise hand">${ICON.hand}</button>`}
+        ${isHost ? `<button class="fbtn" id="end" aria-label="End for everyone" style="width:auto;padding:0 14px;color:#FF8A7A;font-weight:800;font-size:14px">End</button>` : ''}
+      </div>
+      ${inviteOpen ? `<div class="sheet"><div class="label">INVITE <button id="closeInvite">Close</button></div>
+        <div class="share">
+          <button class="sbtn" id="share"><span>${ICON.share}</span>Share</button>
+          <button class="sbtn" id="copy"><span>${ICON.link}</span>Copy</button>
+        </div></div>` : ''}`;
+    document.getElementById('leave').onclick = () => leave('leave');
+    const muteBtn = document.getElementById('mute');
+    if (muteBtn) muteBtn.onclick = () => setMuted(!muted);
+    const handBtn = document.getElementById('hand');
+    if (handBtn) handBtn.onclick = () => { hand = !hand; track(); render(); };
+    const end = document.getElementById('end');
+    if (end) end.onclick = async () => { await send({ type: 'ended' }); leave('end'); };
+    document.getElementById('invite').onclick = () => { inviteOpen = !inviteOpen; render(); };
+    const close = document.getElementById('closeInvite');
+    if (close) close.onclick = () => { inviteOpen = false; render(); };
+    const text = `Join the "${cfg.clubName}" live session on CouCouMTL!`;
+    const shareBtn = document.getElementById('share');
+    if (shareBtn) shareBtn.onclick = () => (navigator.share ? navigator.share({ text }).catch(() => {}) : post('share', { text }));
+    const copyBtn = document.getElementById('copy');
+    if (copyBtn) copyBtn.onclick = () => { navigator.clipboard?.writeText(text).catch(() => {}); copyBtn.lastChild.textContent = 'Copied'; };
+    app.querySelectorAll('[data-pick]').forEach((t) => (t.onclick = () => {
+      if (!isHost || t.dataset.pick === me) return;
+      selected = selected === t.dataset.pick ? null : t.dataset.pick;
+      render();
+    }));
+    app.querySelectorAll('[data-act]').forEach((b) => (b.onclick = (e) => {
+      e.stopPropagation();
+      send({ type: b.dataset.act, to: b.dataset.id });
+      selected = null;
+      render();
+    }));
+  }
+
+  function watchLevel(id, stream) {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const src = audioCtx.createMediaStreamSource(stream);
+      const an = audioCtx.createAnalyser();
+      an.fftSize = 512;
+      src.connect(an);
+      levels.set(id, an);
+    } catch (e) { /* speaking ring is optional */ }
+  }
+  const buf = new Uint8Array(512);
+  function tick() {
+    levels.forEach((an, id) => {
+      an.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+      const rms = Math.sqrt(sum / buf.length);
+      const speaking = rms > 0.04 && !(people.get(id)?.muted);
+      document.getElementById('t-' + id)?.classList.toggle('speaking', speaking);
+    });
+    requestAnimationFrame(tick);
+  }
+
+  function send(payload) {
+    return channel?.send({ type: 'broadcast', event: 'room', payload: { ...payload, from: me } });
+  }
+
+  function peerFor(id) {
+    if (peers.has(id)) return peers.get(id);
+    const pc = new RTCPeerConnection(ICE);
+    const entry = { pc, pending: [], audio: null };
+    peers.set(id, entry);
+    local.getTracks().forEach((t) => pc.addTrack(t, local));
+    pc.onicecandidate = (e) => e.candidate && send({ type: 'ice', to: id, data: e.candidate.toJSON() });
+    pc.ontrack = (e) => {
+      const stream = e.streams[0];
+      if (!entry.audio) {
+        entry.audio = document.createElement('audio');
+        entry.audio.autoplay = true;
+        entry.audio.setAttribute('playsinline', '');
+        document.body.appendChild(entry.audio);
+      }
+      entry.audio.srcObject = stream;
+      entry.audio.play().catch(() => {});
+      watchLevel(id, stream);
+    };
+    pc.onconnectionstatechange = () => {
+      if (['failed', 'closed'].includes(pc.connectionState)) drop(id);
+    };
+    return entry;
+  }
+
+  async function call(id) {
+    const { pc } = peerFor(id);
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    send({ type: 'offer', to: id, data: { type: offer.type, sdp: offer.sdp } });
+  }
+
+  function drop(id) {
+    const entry = peers.get(id);
+    if (entry) { entry.pc.close(); entry.audio?.remove(); }
+    peers.delete(id);
+    levels.delete(id);
+  }
+
+  async function onSignal({ payload: m }) {
+    if (m.type === 'ended' && m.from === cfg.hostId) return leave('ended');
+    if (m.to !== me) return;
+    if (m.type === 'host-mute' && m.from === cfg.hostId) return setMuted(true);
+    if (m.type === 'host-promote' && m.from === cfg.hostId) { role = 'speaker'; hand = false; return setMuted(false); }
+    if (m.type === 'host-demote' && m.from === cfg.hostId) { role = 'listener'; return setMuted(true); }
+    if (m.type === 'host-kick' && m.from === cfg.hostId) return leave('kicked');
+    if (m.type === 'offer') {
+      const entry = peerFor(m.from);
+      await entry.pc.setRemoteDescription(m.data);
+      for (const c of entry.pending.splice(0)) await entry.pc.addIceCandidate(c).catch(() => {});
+      const answer = await entry.pc.createAnswer();
+      await entry.pc.setLocalDescription(answer);
+      send({ type: 'answer', to: m.from, data: { type: answer.type, sdp: answer.sdp } });
+    } else if (m.type === 'answer') {
+      const entry = peers.get(m.from);
+      if (entry) {
+        await entry.pc.setRemoteDescription(m.data);
+        for (const c of entry.pending.splice(0)) await entry.pc.addIceCandidate(c).catch(() => {});
+      }
+    } else if (m.type === 'ice') {
+      const entry = peerFor(m.from);
+      if (entry.pc.remoteDescription) await entry.pc.addIceCandidate(m.data).catch(() => {});
+      else entry.pending.push(m.data);
+    }
+  }
+
+  function syncPresence() {
+    const state = channel.presenceState();
+    const present = new Set();
+    Object.entries(state).forEach(([id, metas]) => {
+      const meta = metas[metas.length - 1];
+      present.add(id);
+      people.set(id, { name: meta.name || 'Member', avatar: meta.avatar, muted: !!meta.muted, hand: !!meta.hand, role: id === cfg.hostId ? 'host' : meta.role === 'speaker' ? 'speaker' : 'listener' });
+      // The person with the smaller id starts the call, so each pair connects once.
+      if (id !== me && !peers.has(id) && me < id) call(id).catch(() => {});
+    });
+    [...people.keys()].forEach((id) => { if (!present.has(id)) { people.delete(id); drop(id); } });
+    render();
+  }
+
+  function track() {
+    return channel?.track({ name: myProfile?.display_name || 'Member', avatar: myProfile?.avatar_url || null, muted, role, hand });
+  }
+
+  function setMutedSilently(next) {
+    muted = next;
+    local?.getAudioTracks().forEach((t) => (t.enabled = !muted));
+  }
+  function setMuted(next) {
+    muted = role === 'listener' ? true : next;
+    local?.getAudioTracks().forEach((t) => (t.enabled = !muted));
+    track();
+    render();
+  }
+
+  async function join() {
+    try {
+      local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    } catch (e) {
+      return renderIntro('Microphone access is needed to join. Allow the microphone and try again.');
+    }
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx.resume?.();
+    watchLevel(me, local);
+    setMutedSilently(role === 'listener');
+    const { data } = await db.from('profiles').select('display_name, avatar_url').eq('id', me).maybeSingle();
+    myProfile = data;
+    channel = db.channel('live-' + cfg.sessionId, { config: { presence: { key: me }, broadcast: { self: false } } });
+    channel
+      .on('broadcast', { event: 'room' }, (msg) => onSignal(msg).catch(() => {}))
+      .on('presence', { event: 'sync' }, syncPresence)
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          joined = true;
+          await track();
+          requestAnimationFrame(tick);
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') renderIntro('Could not connect to the live room. Check your connection and try again.');
+      });
+  }
+
+  function leave(reason) {
+    peers.forEach((_, id) => drop(id));
+    local?.getTracks().forEach((t) => t.stop());
+    channel && db.removeChannel(channel);
+    joined = false;
+    post(reason);
+  }
+
+  renderIntro();
+})();
+</script>
+</body>
+</html>

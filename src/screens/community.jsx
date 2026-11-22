@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
-  Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -15,11 +15,76 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { WebView } from 'react-native-webview';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { makeStyles, useCoucouTheme } from '../theme/coucou';
 
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
+// The live room page (voice + speaking avatars) is hosted with our website and
+// shown inside the app, so nobody leaves CouCouMTL.
+const LIVE_ROOM_URL = 'https://coucoumtl.vercel.app/live.html';
+
+function LiveRoom({ visible, club, live, userId, onClose, onEnd }) {
+  const { C } = useCoucouTheme();
+  const [config, setConfig] = useState(null);
+  useEffect(() => {
+    if (!visible) return;
+    supabase.auth.getSession().then(({ data }) => {
+      setConfig({
+        supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
+        supabaseKey: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+        accessToken: data.session?.access_token,
+        sessionId: live.id,
+        clubId: club.id,
+        hostId: club.owner_id,
+        userId,
+        clubName: club.name,
+        category: categoryLabel(club.category),
+        title: live.title,
+        theme: C.name,
+      });
+    });
+  }, [visible, club, live, userId, C.name]);
+
+  function onMessage(event) {
+    let message = {};
+    try {
+      message = JSON.parse(event.nativeEvent.data);
+    } catch {
+      return;
+    }
+    if (message.type === 'end') onEnd();
+    if (['leave', 'end', 'ended', 'kicked'].includes(message.type)) onClose(message.type);
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={() => onClose('leave')}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: C.page }}>
+        {Platform.OS === 'web' ? (
+          <View style={{ padding: 24, gap: 12 }}>
+            <Text style={{ color: C.text, fontWeight: '800' }}>
+              Live rooms work in the phone app. Open CouCouMTL in Expo Go to join.
+            </Text>
+            <Pill label="Close" onPress={() => onClose('leave')} />
+          </View>
+        ) : config ? (
+          <WebView
+            source={{ uri: LIVE_ROOM_URL }}
+            injectedJavaScriptBeforeContentLoaded={`window.COUCOU = ${JSON.stringify(config)}; true;`}
+            onMessage={onMessage}
+            javaScriptEnabled
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            mediaCapturePermissionGrantType="grant"
+            style={{ flex: 1, backgroundColor: C.page }}
+          />
+        ) : null}
+      </SafeAreaView>
+    </Modal>
+  );
+}
 const CLUB_CATEGORIES = [
   ['language', 'Languages'],
   ['newcomers', 'Newcomers'],
@@ -574,7 +639,15 @@ function ClubRoom({ club, userId, owner, isMember, memberCount, live, onChanged,
     }
   }
 
-  const callUrl = live ? `https://meet.jit.si/CouCouMTL-${live.room_code}` : null;
+  const [roomOpen, setRoomOpen] = useState(false);
+  const endLive = useCallback(async () => {
+    if (!live) return;
+    await supabase
+      .from('club_sessions')
+      .update({ ended_at: new Date().toISOString() })
+      .eq('id', live.id);
+    onChanged();
+  }, [live, onChanged]);
 
   return (
     <KeyboardAvoidingView style={{ gap: 14 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -611,9 +684,16 @@ function ClubRoom({ club, userId, owner, isMember, memberCount, live, onChanged,
       {live ? (
         <View style={[st.card, { borderColor: C.error, borderWidth: 2 }]}>
           <Text style={[st.bold, { color: C.error }]}>● LIVE NOW · {live.title}</Text>
-          <Text style={st.meta}>Talk face to face with the club, like a language tandem.</Text>
+          <Text style={st.meta}>
+            Talk with the club by voice, right here in the app, like a language tandem.
+            {isOwner ? ' You are the host.' : ''}
+          </Text>
           {canChat ? (
-            <Pill label="Join video call" icon="video" onPress={() => Linking.openURL(callUrl)} />
+            <Pill
+              label={isOwner ? 'Open the live room (host)' : 'Join the live room'}
+              icon="mic"
+              onPress={() => setRoomOpen(true)}
+            />
           ) : (
             <Text style={st.meta}>Join the club to take part.</Text>
           )}
@@ -709,6 +789,20 @@ function ClubRoom({ club, userId, owner, isMember, memberCount, live, onChanged,
         <Text style={st.meta}>Join the club to see the chat and live sessions.</Text>
       )}
       {!!error && <Text style={{ color: C.error }}>{error}</Text>}
+      {live && (
+        <LiveRoom
+          visible={roomOpen}
+          club={club}
+          live={live}
+          userId={userId}
+          onEnd={endLive}
+          onClose={(reason) => {
+            setRoomOpen(false);
+            if (reason === 'kicked') setError('The host removed you from this live session.');
+            if (reason === 'ended') setError('The host ended the live session.');
+          }}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
