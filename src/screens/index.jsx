@@ -17,6 +17,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import PublicServices from './public-services';
+import Community from './community';
 import {
   makeStyles,
   setThemeMode,
@@ -3689,8 +3690,12 @@ export default function CoucouSocial() {
                 )}
               </>
             ) : tab === 'Discover' ? (
+              <Community
+                userId={currentUserId}
+                role={currentProfile?.role}
+                blocked={blocked}
+                renderPeople={() => (
               <>
-                <Text style={s.title}>Discover</Text>
                 <TextInput
                   accessibilityLabel="Search"
                   style={s.input}
@@ -3725,6 +3730,8 @@ export default function CoucouSocial() {
                   <Text style={s.body}>No people match this search.</Text>
                 )}
               </>
+                )}
+              />
             ) : (
               <>
                 <Text style={s.title}>Inbox</Text>
