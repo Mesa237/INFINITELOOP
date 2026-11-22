@@ -14,7 +14,7 @@ This folder contains the versioned database schema for CouCouMontreal.
 | --- | --- | --- |
 | `profiles` | Public display name, role, profile picture, languages, Montréal neighbourhood, and short bio | Signed-in users can read; each user edits their own |
 | `profile_preferences` | Optional country-of-origin preference for matching | Private to the profile owner |
-| `help_requests` | Help type, description, preferred language, neighbourhood, schedule, and status | Signed-in users can browse open requests; requester and match volunteer can view their request |
+| `help_requests` | Help type, description, preferred language, neighbourhood, schedule, and status | Members see only their own requests; volunteers and people with both roles can browse open requests; match participants can view their request |
 | `matches` | Volunteer offers and their status | Only the requester and volunteer can view a match |
 | `reviews` | 1–5 rating and optional written reason | Review text is visible only to reviewer and reviewee; one review per person per completed request |
 | `reports` | Private safety reports about a user or request | Reporter can view their own report; moderation should use a trusted server/admin role |
@@ -25,6 +25,8 @@ Ratings below 4 require a non-empty reason in the database. Use the `get_profile
 Profiles contain only fields intended to be visible to signed-in members. Country of origin is kept in `profile_preferences`, is optional, and is readable only by its owner. It should be used for recommendations only when the person opts in. Do not store exact home addresses in help requests; use a neighbourhood until people agree to meet.
 
 Users can change their own role from the Me page. The `change_my_role` RPC updates `profiles.role` and synchronizes the associated `members` and `volunteers` rows in one transaction.
+
+Members can create requests and receive offers only from volunteers or people with both roles. Volunteers can offer help but cannot create requests. People with both roles can do both. Any owner can delete their own open request, including requests created before a role change. These permissions are enforced by row-level security as well as by the app UI.
 
 Profile pictures are stored in the public `coucou-profile-pictures` bucket. Authenticated users can upload or replace images only inside their own user-ID folder.
 
@@ -47,7 +49,7 @@ The five fake users in `seed.sql` have no passwords. To test Auth, create accoun
 
 Email Auth is enabled in the local config. For the hosted project, check **Authentication → Sign In / Providers → Email** in the Supabase dashboard and enable Email if it is off. The GitHub integration does not deploy hosted Auth settings by default. Before inviting real users, confirm email settings and configure a suitable SMTP provider for public signup.
 
-Migrations in this branch have **not** been applied to the hosted database. Before applying them:
+Some migrations may already be applied to the hosted database. Check remote migration history before deploying, and do not assume every migration in this branch is pending. Before applying new migrations:
 
 1. Confirm the Supabase project reference is the intended CouCouMontreal project.
 2. Review the migrations with the team.

@@ -180,12 +180,15 @@ function Communities() {
     </View>
   );
 }
-function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
+function CommunityBoard({ area, displayName, role, rulesAccepted, agree }) {
   const { C } = useCoucouTheme();
   const s = useS();
   const [userId, setUserId] = useState(null);
+  const [loadedRole, setLoadedRole] = useState(null);
+  const userRole = role ?? loadedRole;
   const [requests, setRequests] = useState([]);
   const [requesterNames, setRequesterNames] = useState({});
+  const [requesterRoles, setRequesterRoles] = useState({});
   const [matches, setMatches] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [ratingsByProfile, setRatingsByProfile] = useState({});
@@ -198,6 +201,7 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('companionship');
   const [editing, setEditing] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [reviewingRequest, setReviewingRequest] = useState(null);
   const [stars, setStars] = useState('');
   const [reviewReason, setReviewReason] = useState('');
@@ -216,12 +220,30 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
         if (userError) throw userError;
         if (!user) throw new Error('Please sign in to view community help.');
 
-        const { data: rows, error: requestError } = await supabase
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        if (profileError) throw profileError;
+        if (!['seeker', 'volunteer', 'both'].includes(profile.role)) {
+          throw new Error('Your account does not have a valid community role.');
+        }
+
+        let requestQuery = supabase
           .from('help_requests')
           .select(
             'id, requester_id, title, description, help_type, neighborhood, status, created_at',
-          )
-          .order('created_at', { ascending: false });
+          );
+        if (profile.role === 'seeker') {
+          requestQuery = requestQuery.eq('requester_id', user.id);
+        } else if (profile.role === 'volunteer') {
+          requestQuery = requestQuery.eq('status', 'open');
+        }
+        const { data: rows, error: requestError } = await requestQuery.order(
+          'created_at',
+          { ascending: false },
+        );
         if (requestError) throw requestError;
 
         const requestRows = rows ?? [];
@@ -254,7 +276,7 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
         if (profileIds.length) {
           const { data, error: profileError } = await supabase
             .from('profiles')
-            .select('id, display_name')
+            .select('id, display_name, role')
             .in('id', profileIds);
           if (profileError) throw profileError;
           profiles = data ?? [];
@@ -280,6 +302,7 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
 
         if (active) {
           setUserId(user.id);
+          setLoadedRole(profile.role);
           setRequests(requestRows);
           setMatches(matchRows);
           setReviews(reviewRows);
@@ -288,6 +311,9 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
           );
           setRequesterNames(
             Object.fromEntries(profiles.map((profile) => [profile.id, profile.display_name])),
+          );
+          setRequesterRoles(
+            Object.fromEntries(profiles.map((profile) => [profile.id, profile.role])),
           );
         }
       } catch (loadError) {
@@ -307,14 +333,23 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
     return () => {
       active = false;
     };
-  }, [reloadKey]);
+  }, [reloadKey, role]);
 
   async function publishRequest() {
     const cleanTitle = title.trim();
     const cleanDescription = description.trim();
     const neighborhood = (area || 'Montréal').trim();
 
-    if (!userId || cleanTitle.length < 5 || cleanDescription.length < 10 || !neighborhood) {
+    if (!userId || !['seeker', 'both'].includes(userRole)) {
+      setError('Only members and people with both roles can post requests.');
+      return;
+    }
+
+    if (
+      cleanTitle.length < 5 ||
+      cleanDescription.length < 10 ||
+      !neighborhood
+    ) {
       setError('Add a title, at least 10 characters of detail, and a neighbourhood.');
       return;
     }
@@ -360,7 +395,13 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   }
 
   async function offerToHelp(requestId) {
-    if (!userId || !rulesAccepted) return;
+    if (
+      !userId ||
+      !['volunteer', 'both'].includes(userRole) ||
+      !rulesAccepted
+    ) {
+      return;
+    }
     setBusyAction(requestId + ':offer');
     setError('');
     try {
@@ -384,6 +425,45 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
         actionError instanceof Error
           ? actionError.message
           : 'Could not send your offer. Refresh and try again.',
+      );
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function deleteRequest(request) {
+    if (
+      request.requester_id !== userId ||
+      request.status !== 'open' ||
+      busyAction
+    ) {
+      return;
+    }
+
+    setBusyAction(request.id + ':delete');
+    setError('');
+    try {
+      const { data, error: deleteError } = await supabase
+        .from('help_requests')
+        .delete()
+        .eq('id', request.id)
+        .select('id')
+        .maybeSingle();
+      if (deleteError) throw deleteError;
+      if (!data) throw new Error('This request was not deleted. Refresh and try again.');
+      setRequests((previous) =>
+        previous.filter((item) => item.id !== request.id),
+      );
+      setMatches((previous) =>
+        previous.filter((match) => match.help_request_id !== request.id),
+      );
+      setReviews((previous) =>
+        previous.filter((review) => review.help_request_id !== request.id),
+      );
+      setConfirmDeleteId(null);
+    } catch (deleteError) {
+      setError(
+        getErrorMessage(deleteError, 'Could not delete your request. Try again.'),
       );
     } finally {
       setBusyAction('');
@@ -452,6 +532,15 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
       contentContainerStyle={s.content}
     >
       <Text style={s.title}>Community help</Text>
+      {userRole && (
+        <Text style={s.body}>
+          {userRole === 'seeker'
+            ? 'Your requests and volunteer offers are shown here.'
+            : userRole === 'volunteer'
+              ? 'Browse open requests and offer help. Volunteers cannot post requests.'
+              : 'Post your own requests and offer help on open requests.'}
+        </Text>
+      )}
       <View style={s.card}>
         <Text style={s.section}>Community rules · v1.0</Text>
         <Text style={s.body}>{RULES}</Text>
@@ -461,15 +550,17 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
           onPress={agree}
         />
       </View>
-      <Button
-        label={editing ? 'Cancel request' : 'Post a request'}
-        disabled={!rulesAccepted}
-        onPress={() => {
-          setError('');
-          setEditing(!editing);
-        }}
-      />
-      {editing && (
+      {['seeker', 'both'].includes(userRole) && (
+        <Button
+          label={editing ? 'Cancel request' : 'Post a request'}
+          disabled={!rulesAccepted}
+          onPress={() => {
+            setError('');
+            setEditing(!editing);
+          }}
+        />
+      )}
+      {editing && ['seeker', 'both'].includes(userRole) && (
         <View style={s.card}>
           <TextInput
             style={s.input}
@@ -543,8 +634,15 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
             (match) => match.status === 'accepted' || match.status === 'completed',
           );
           const pendingOffers =
-            request.requester_id === userId
-              ? requestMatches.filter((match) => match.status === 'pending')
+            request.requester_id === userId &&
+            ['seeker', 'both'].includes(userRole)
+              ? requestMatches.filter(
+                  (match) =>
+                    match.status === 'pending' &&
+                    ['volunteer', 'both'].includes(
+                      requesterRoles[match.volunteer_id],
+                    ),
+                )
               : [];
           const requestReviews = reviews.filter(
             (review) => review.help_request_id === request.id,
@@ -569,7 +667,41 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
                   (request.requester_id === userId ? displayName || 'You' : 'Neighbour')}
               </Text>
 
-              {request.requester_id !== userId &&
+              {request.requester_id === userId &&
+                request.status === 'open' && (
+                  confirmDeleteId === request.id ? (
+                    <View>
+                      <Text style={s.meta}>
+                        Delete this request and its related offers? This cannot be undone.
+                      </Text>
+                      <Button
+                        label={
+                          busyAction === request.id + ':delete'
+                            ? 'Deleting…'
+                            : 'Confirm delete'
+                        }
+                        disabled={Boolean(busyAction)}
+                        onPress={() => deleteRequest(request)}
+                      />
+                      <Button
+                        soft
+                        label="Keep request"
+                        disabled={Boolean(busyAction)}
+                        onPress={() => setConfirmDeleteId(null)}
+                      />
+                    </View>
+                  ) : (
+                    <Button
+                      soft
+                      label="Delete my request"
+                      disabled={Boolean(busyAction)}
+                      onPress={() => setConfirmDeleteId(request.id)}
+                    />
+                  )
+                )}
+
+              {['volunteer', 'both'].includes(userRole) &&
+                request.requester_id !== userId &&
                 request.status === 'open' &&
                 !myOffer &&
                 rulesAccepted && (
@@ -1299,6 +1431,7 @@ export default function CoucouSocial() {
           <CommunityBoard
             area={area}
             displayName={currentProfile?.display_name}
+            role={currentProfile?.role}
             rulesAccepted={rulesAccepted}
             agree={() => setRulesAccepted(true)}
           />
