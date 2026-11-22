@@ -523,6 +523,278 @@ function HelpOfferInbox({
     </View>
   );
 }
+// ---- Meet: meeting proposals inside a match chat ----
+// Next 7 days and hourly slots, so picking a time works the same on iOS, Android and web.
+function nextDays() {
+  const days = [];
+  const today = new Date();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+    days.push({
+      key: d.toDateString(),
+      date: d,
+      label:
+        i === 0
+          ? 'Today'
+          : i === 1
+            ? 'Tomorrow'
+            : d.toLocaleDateString('en-CA', { weekday: 'short', day: 'numeric' }),
+    });
+  }
+  return days;
+}
+const MEET_HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+const hourLabel = (h) => (h < 12 ? h + ' AM' : h === 12 ? '12 PM' : h - 12 + ' PM');
+const formatMeetAt = (iso) =>
+  iso
+    ? new Date(iso).toLocaleString('en-CA', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : 'Time to confirm';
+const MEET_OPTION_LABELS = {
+  member: 'Member’s location',
+  midpoint: 'Fair midpoint',
+  volunteer: 'Volunteer’s chosen place',
+};
+const PROPOSAL_FIELDS =
+  'id, match_id, proposed_by, option, place_name, public_place_id, lat, lng, meet_at, status, created_at';
+const byCreatedAt = (a, b) => new Date(a.created_at) - new Date(b.created_at);
+function upsertProposal(list, row) {
+  const i = list.findIndex((item) => item.id === row.id);
+  if (i === -1) return [...list, row].sort(byCreatedAt);
+  const next = list.slice();
+  next[i] = { ...next[i], ...row };
+  return next;
+}
+function mapsUrl(proposal) {
+  const hasCoords =
+    typeof proposal.lat === 'number' && typeof proposal.lng === 'number';
+  const name = encodeURIComponent(proposal.place_name);
+  if (Platform.OS === 'ios') {
+    return hasCoords
+      ? `https://maps.apple.com/?ll=${proposal.lat},${proposal.lng}&q=${name}`
+      : `https://maps.apple.com/?q=${name}`;
+  }
+  return hasCoords
+    ? `https://www.google.com/maps/search/?api=1&query=${proposal.lat},${proposal.lng}`
+    : `https://www.google.com/maps/search/?api=1&query=${name}`;
+}
+
+function MeetPanel({ matchId, userId, isVolunteer, onProposed }) {
+  const { C } = useCoucouTheme();
+  const s = useS();
+  const [option, setOption] = useState('');
+  const [placeName, setPlaceName] = useState('');
+  const [places, setPlaces] = useState([]);
+  const [placesLoading, setPlacesLoading] = useState(false);
+  const [pickedPlace, setPickedPlace] = useState(null);
+  const [day, setDay] = useState('');
+  const [hour, setHour] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const days = nextDays();
+
+  const options = isVolunteer ? ['midpoint', 'volunteer'] : ['member', 'midpoint'];
+  const optionLabels = isVolunteer
+    ? ['Fair midpoint', 'My chosen place']
+    : ['My location', 'Fair midpoint'];
+
+  async function chooseOption(next) {
+    setOption(next);
+    setError('');
+    setPickedPlace(null);
+    if (next !== 'midpoint') return;
+    setPlacesLoading(true);
+    try {
+      const { data, error: rpcError } = await supabase.rpc('suggest_meeting_places', {
+        target_match_id: matchId,
+      });
+      if (rpcError) throw rpcError;
+      setPlaces(data ?? []);
+    } catch {
+      setPlaces([]);
+      setError('Could not find meeting places right now. Try again, or choose a place yourself.');
+    } finally {
+      setPlacesLoading(false);
+    }
+  }
+
+  async function send() {
+    const chosenDay = days.find((d) => d.key === day);
+    if (!userId || !chosenDay || hour === '') return;
+    const meetAt = new Date(chosenDay.date);
+    meetAt.setHours(Number(hour), 0, 0, 0);
+    const row = {
+      match_id: matchId,
+      proposed_by: userId,
+      option,
+      meet_at: meetAt.toISOString(),
+    };
+    if (option === 'midpoint') {
+      if (!pickedPlace) return;
+      Object.assign(row, {
+        place_name: pickedPlace.name,
+        public_place_id: pickedPlace.place_id,
+        lat: pickedPlace.lat,
+        lng: pickedPlace.lng,
+      });
+    } else {
+      row.place_name = placeName.trim();
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const { data, error: insertError } = await supabase
+        .from('meeting_proposals')
+        .insert(row)
+        .select(PROPOSAL_FIELDS)
+        .single();
+      if (insertError) throw insertError;
+      onProposed(data);
+    } catch {
+      setError("Your proposal wasn't sent. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const placeReady =
+    option === 'midpoint' ? !!pickedPlace : placeName.trim().length >= 2;
+  const canSend = !!option && placeReady && !!day && hour !== '' && !busy;
+
+  return (
+    <View style={[s.card, { backgroundColor: C.page }]}>
+      <Text style={s.section}>Where should you meet?</Text>
+      <Choices
+        title="Choose an option"
+        values={options}
+        labels={optionLabels}
+        value={option}
+        change={chooseOption}
+      />
+      {(option === 'member' || option === 'volunteer') && (
+        <TextInput
+          accessibilityLabel="Place name"
+          style={s.input}
+          placeholderTextColor={C.placeholder}
+          placeholder="Place name, e.g. Atwater Library"
+          value={placeName}
+          onChangeText={setPlaceName}
+          maxLength={200}
+        />
+      )}
+      {option === 'midpoint' &&
+        (placesLoading ? (
+          <Text style={s.meta}>Finding fair places…</Text>
+        ) : (
+          places.map((place) => {
+            const mine = isVolunteer ? place.volunteer_km : place.member_km;
+            const theirs = isVolunteer ? place.member_km : place.volunteer_km;
+            const picked = pickedPlace?.place_id === place.place_id;
+            return (
+              <Pressable
+                key={place.place_id}
+                accessibilityRole="button"
+                accessibilityState={{ selected: picked }}
+                onPress={() => setPickedPlace(place)}
+                style={[
+                  s.card,
+                  picked && { borderColor: C.primary, borderWidth: 2 },
+                ]}
+              >
+                <Text style={s.bold}>
+                  {picked ? '✓ ' : ''}
+                  {place.name}
+                </Text>
+                <Text style={s.meta}>
+                  You: {Number(mine).toFixed(1)} km · Them: {Number(theirs).toFixed(1)} km
+                </Text>
+              </Pressable>
+            );
+          })
+        ))}
+      {!!option && (
+        <>
+          <Choices
+            title="Day"
+            values={days.map((d) => d.key)}
+            labels={days.map((d) => d.label)}
+            value={day}
+            change={setDay}
+          />
+          <Choices
+            title="Time"
+            values={MEET_HOURS.map(String)}
+            labels={MEET_HOURS.map(hourLabel)}
+            value={hour}
+            change={setHour}
+          />
+          <Button
+            label={busy ? 'Sending…' : 'Send proposal'}
+            disabled={!canSend}
+            onPress={send}
+          />
+        </>
+      )}
+      {!!error && (
+        <Text accessibilityLiveRegion="polite" style={{ color: C.error }}>
+          {error}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function ProposalCard({ proposal, userId, partnerName, busy, onAnswer }) {
+  const { C } = useCoucouTheme();
+  const s = useS();
+  const mine = proposal.proposed_by === userId;
+  return (
+    <View style={[s.card, { borderColor: C.yellow, borderWidth: 2 }]}>
+      <Text style={s.meta}>
+        {MEET_OPTION_LABELS[proposal.option] ?? 'Meeting'} ·{' '}
+        {mine ? 'You proposed' : partnerName + ' proposed'} ·{' '}
+        {proposal.status.toUpperCase()}
+      </Text>
+      <Text style={s.cardTitle}>{proposal.place_name}</Text>
+      <Text style={s.body}>{formatMeetAt(proposal.meet_at)}</Text>
+      {proposal.status === 'proposed' &&
+        (mine ? (
+          <Button
+            soft
+            label="Cancel"
+            disabled={busy}
+            onPress={() => onAnswer(proposal, 'cancelled')}
+          />
+        ) : (
+          <View style={s.row}>
+            <Button
+              label="Accept"
+              disabled={busy}
+              onPress={() => onAnswer(proposal, 'accepted')}
+            />
+            <Button
+              soft
+              label="Decline"
+              disabled={busy}
+              onPress={() => onAnswer(proposal, 'declined')}
+            />
+          </View>
+        ))}
+      {proposal.status === 'accepted' && (
+        <Button
+          label="Open in Maps"
+          onPress={() => Linking.openURL(mapsUrl(proposal))}
+        />
+      )}
+    </View>
+  );
+}
+
 function MatchConversation({ matchId, partnerName }) {
   const { C } = useCoucouTheme();
   const s = useS();
@@ -534,6 +806,86 @@ function MatchConversation({ matchId, partnerName }) {
   const [error, setError] = useState('');
   const scrollRef = useRef(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [isVolunteer, setIsVolunteer] = useState(false);
+  const [proposals, setProposals] = useState([]);
+  const [meetOpen, setMeetOpen] = useState(false);
+  const [meetError, setMeetError] = useState('');
+  const [busyProposal, setBusyProposal] = useState('');
+
+  // Meet: who is who in this match, plus live meeting proposals.
+  useEffect(() => {
+    let active = true;
+    async function loadMeet() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const [{ data: match }, { data: rows, error: proposalError }] =
+          await Promise.all([
+            supabase.from('matches').select('volunteer_id').eq('id', matchId).maybeSingle(),
+            supabase
+              .from('meeting_proposals')
+              .select(PROPOSAL_FIELDS)
+              .eq('match_id', matchId)
+              .order('created_at', { ascending: true }),
+          ]);
+        if (proposalError) throw proposalError;
+        if (active) {
+          setIsVolunteer(!!user && match?.volunteer_id === user.id);
+          setProposals(rows ?? []);
+        }
+      } catch {
+        if (active) setMeetError('Meeting proposals could not be loaded right now.');
+      }
+    }
+    loadMeet();
+    const channel = supabase
+      .channel(`match-meetings-${matchId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'meeting_proposals',
+          filter: `match_id=eq.${matchId}`,
+        },
+        (payload) => {
+          if (payload.new?.id) {
+            setProposals((previous) => upsertProposal(previous, payload.new));
+          }
+        },
+      )
+      .subscribe();
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [matchId]);
+
+  async function answerProposal(proposal, status) {
+    setBusyProposal(proposal.id);
+    setMeetError('');
+    try {
+      const { data, error: updateError } = await supabase
+        .from('meeting_proposals')
+        .update({ status })
+        .eq('id', proposal.id)
+        .select('id, status')
+        .maybeSingle();
+      if (updateError) throw updateError;
+      if (!data) throw new Error('Not updated');
+      setProposals((previous) => upsertProposal(previous, data));
+    } catch {
+      setMeetError('Could not update this proposal. Try again.');
+    } finally {
+      setBusyProposal('');
+    }
+  }
+
+  const timeline = [
+    ...messages,
+    ...proposals.map((proposal) => ({ ...proposal, kind: 'proposal' })),
+  ].sort(byCreatedAt);
 
   useEffect(() => {
     let active = true;
@@ -629,7 +981,31 @@ function MatchConversation({ matchId, partnerName }) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={s.card}>
-        <Text style={s.title}>{partnerName}</Text>
+        <View style={s.header}>
+          <Text style={s.title}>{partnerName}</Text>
+          <Button
+            soft={meetOpen}
+            label={meetOpen ? 'Close' : 'Meet'}
+            disabled={!userId}
+            onPress={() => setMeetOpen(!meetOpen)}
+          />
+        </View>
+        {meetOpen && (
+          <MeetPanel
+            matchId={matchId}
+            userId={userId}
+            isVolunteer={isVolunteer}
+            onProposed={(row) => {
+              setProposals((previous) => upsertProposal(previous, row));
+              setMeetOpen(false);
+            }}
+          />
+        )}
+        {!!meetError && (
+          <Text accessibilityLiveRegion="polite" style={{ color: C.error }}>
+            {meetError}
+          </Text>
+        )}
         {loading && <Text style={s.meta}>Loading conversation…</Text>}
         {!!error && (
           <Text accessibilityLiveRegion="polite" style={{ color: C.error }}>
@@ -646,7 +1022,17 @@ function MatchConversation({ matchId, partnerName }) {
           {!loading && messages.length === 0 && (
             <Text style={s.body}>No messages yet. Send a message to get started.</Text>
           )}
-          {messages.map((message) => (
+          {timeline.map((message) =>
+            message.kind === 'proposal' ? (
+              <ProposalCard
+                key={'proposal-' + message.id}
+                proposal={message}
+                userId={userId}
+                partnerName={partnerName}
+                busy={busyProposal === message.id}
+                onAnswer={answerProposal}
+              />
+            ) : (
             <View
               key={message.id}
               style={[
@@ -664,7 +1050,8 @@ function MatchConversation({ matchId, partnerName }) {
                 {new Date(message.created_at).toLocaleString()}
               </Text>
             </View>
-          ))}
+            ),
+          )}
         </ScrollView>
         <View style={s.row}>
           <TextInput
