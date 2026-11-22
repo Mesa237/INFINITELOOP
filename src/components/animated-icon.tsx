@@ -7,6 +7,49 @@ import { scheduleOnRN } from 'react-native-worklets';
 
 const INITIAL_SCALE_FACTOR = Dimensions.get('screen').height / 90;
 const DURATION = 600;
+const SPLASH_DURATION = 2800;
+
+const overlayKeyframe = new Keyframe({
+  0: { opacity: 1 },
+  90: { opacity: 1 },
+  100: { opacity: 0 },
+});
+
+const pawKeyframe = new Keyframe({
+  0: {
+    opacity: 0,
+    transform: [{ translateY: 120 }, { scale: 0.82 }, { rotateZ: '0deg' }],
+  },
+  24: {
+    opacity: 1,
+    transform: [{ translateY: 0 }, { scale: 1 }, { rotateZ: '0deg' }],
+    easing: Easing.out(Easing.cubic),
+  },
+  38: {
+    transform: [{ translateY: 0 }, { scale: 1 }, { rotateZ: '-10deg' }],
+    easing: Easing.inOut(Easing.cubic),
+  },
+  52: {
+    transform: [{ translateY: 0 }, { scale: 1 }, { rotateZ: '10deg' }],
+    easing: Easing.inOut(Easing.cubic),
+  },
+  66: {
+    transform: [{ translateY: 0 }, { scale: 1 }, { rotateZ: '-8deg' }],
+    easing: Easing.inOut(Easing.cubic),
+  },
+  80: {
+    transform: [{ translateY: 0 }, { scale: 1 }, { rotateZ: '8deg' }],
+    easing: Easing.inOut(Easing.cubic),
+  },
+  92: {
+    transform: [{ translateY: 0 }, { scale: 1 }, { rotateZ: '0deg' }],
+    easing: Easing.out(Easing.cubic),
+  },
+  100: {
+    opacity: 1,
+    transform: [{ translateY: 0 }, { scale: 1 }, { rotateZ: '0deg' }],
+  },
+});
 
 export function AnimatedSplashOverlay() {
   const [animate, setAnimate] = useState(false);
@@ -14,37 +57,29 @@ export function AnimatedSplashOverlay() {
 
   if (!visible) return null;
 
-  const splashKeyframe = new Keyframe({
-    0: {
-      transform: [{ scale: 1 }],
-      opacity: 1,
-    },
-    20: {
-      opacity: 1,
-    },
-    70: {
-      opacity: 0,
-      easing: Easing.elastic(0.7),
-    },
-    100: {
-      opacity: 0,
-      transform: [{ scale: 1 }],
-      easing: Easing.elastic(0.7),
-    },
-  });
-
-  const image = <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />;
-
   return animate ? (
     <Animated.View
-      entering={splashKeyframe.duration(DURATION).withCallback((finished) => {
-        'worklet';
-        if (finished) {
-          scheduleOnRN(setVisible, false);
-        }
-      })}
+      entering={overlayKeyframe
+        .duration(SPLASH_DURATION)
+        .withCallback((finished) => {
+          'worklet';
+          if (finished) scheduleOnRN(setVisible, false);
+        })}
       style={styles.splashOverlay}>
-      {image}
+      <Image
+        source={require('@/assets/images/splash-background.png')}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+      />
+      <Animated.View
+        entering={pawKeyframe.duration(SPLASH_DURATION)}
+        style={styles.pawStage}>
+        <Image
+          source={require('@/assets/images/splash-paw.png')}
+          style={styles.paw}
+          contentFit="contain"
+        />
+      </Animated.View>
     </Animated.View>
   ) : (
     <View
@@ -54,7 +89,11 @@ export function AnimatedSplashOverlay() {
         });
       }}
       style={styles.splashOverlay}>
-      {image}
+      <Image
+        source={require('@/assets/images/splash-background.png')}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+      />
     </View>
   );
 }
@@ -140,9 +179,17 @@ const styles = StyleSheet.create({
   },
   splashOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#208AEF',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
+  },
+  pawStage: {
+    width: '88%',
+    maxWidth: 560,
+    aspectRatio: 1,
+  },
+  paw: {
+    width: '100%',
+    height: '100%',
   },
 });

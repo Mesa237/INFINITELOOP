@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import PublicServices from './public-services';
@@ -20,6 +21,7 @@ import {
   THEME_MODES,
   useCoucouTheme,
 } from '../theme/coucou';
+import { setActivePortal } from '../../lib/portal';
 const areas = ['Downtown', 'Le Plateau', 'Verdun'];
 const people = [
   {
@@ -101,6 +103,17 @@ const GROUPS = [
     category: 'language_exchange',
     description: 'Find a conversation partner in Québec City.',
   },
+];
+// The app has no language setting yet; the post language defaults to English.
+const APP_LANGUAGE = 'en';
+const HELP_TYPES = [
+  'appointments',
+  'paperwork',
+  'transportation',
+  'companionship',
+  'language_practice',
+  'technology',
+  'other',
 ];
 const RULES =
   'Treat other members with respect, protect their privacy, and report abuse.';
@@ -714,12 +727,15 @@ function MatchChat({ match, request, userId, names, avatars, onClose }) {
   );
 }
 
-function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
+function CommunityBoard({ area, displayName, role, rulesAccepted, agree }) {
   const { C } = useCoucouTheme();
   const s = useS();
   const [userId, setUserId] = useState(null);
+  const [loadedRole, setLoadedRole] = useState(null);
+  const userRole = role ?? loadedRole;
   const [requests, setRequests] = useState([]);
   const [requesterNames, setRequesterNames] = useState({});
+  const [requesterRoles, setRequesterRoles] = useState({});
   const [matches, setMatches] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [ratingsByProfile, setRatingsByProfile] = useState({});
@@ -732,6 +748,16 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('companionship');
   const [editing, setEditing] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  // AI post assistant (supabase/functions/draft-request).
+  const [aiText, setAiText] = useState('');
+  const [postLanguage, setPostLanguage] = useState(APP_LANGUAGE === 'fr' ? 'fr' : 'en');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiUrgent, setAiUrgent] = useState(false);
+  const [aiHints, setAiHints] = useState([]);
+  const [neededSkills, setNeededSkills] = useState([]);
+  const [detectedLanguage, setDetectedLanguage] = useState(null);
   const [reviewingRequest, setReviewingRequest] = useState(null);
   const [stars, setStars] = useState('');
   const [reviewReason, setReviewReason] = useState('');
@@ -752,12 +778,30 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
         if (userError) throw userError;
         if (!user) throw new Error('Please sign in to view community help.');
 
-        const { data: rows, error: requestError } = await supabase
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        if (profileError) throw profileError;
+        if (!['seeker', 'volunteer', 'both'].includes(profile.role)) {
+          throw new Error('Your account does not have a valid community role.');
+        }
+
+        let requestQuery = supabase
           .from('help_requests')
           .select(
             'id, requester_id, title, description, help_type, neighborhood, status, created_at',
-          )
-          .order('created_at', { ascending: false });
+          );
+        if (profile.role === 'seeker') {
+          requestQuery = requestQuery.eq('requester_id', user.id);
+        } else if (profile.role === 'volunteer') {
+          requestQuery = requestQuery.eq('status', 'open');
+        }
+        const { data: rows, error: requestError } = await requestQuery.order(
+          'created_at',
+          { ascending: false },
+        );
         if (requestError) throw requestError;
 
         const requestRows = rows ?? [];
@@ -791,12 +835,12 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
           // avatar_url is optional: fall back to names only if the column isn't there yet.
           let { data, error: profileError } = await supabase
             .from('profiles')
-            .select('id, display_name, avatar_url')
+            .select('id, display_name, role, avatar_url')
             .in('id', profileIds);
           if (profileError) {
             ({ data, error: profileError } = await supabase
               .from('profiles')
-              .select('id, display_name')
+              .select('id, display_name, role')
               .in('id', profileIds));
           }
           if (profileError) throw profileError;
@@ -823,6 +867,7 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
 
         if (active) {
           setUserId(user.id);
+          setLoadedRole(profile.role);
           setRequests(requestRows);
           setMatches(matchRows);
           setReviews(reviewRows);
@@ -836,6 +881,9 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
             Object.fromEntries(
               profiles.map((profile) => [profile.id, profile.avatar_url || null]),
             ),
+          );
+          setRequesterRoles(
+            Object.fromEntries(profiles.map((profile) => [profile.id, profile.role])),
           );
         }
       } catch (loadError) {
@@ -855,14 +903,59 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
     return () => {
       active = false;
     };
-  }, [reloadKey]);
+  }, [reloadKey, role]);
+
+  async function writeDraft() {
+    const text = aiText.trim();
+    if (!text || aiBusy) return;
+    setAiBusy(true);
+    setAiError('');
+    setAiUrgent(false);
+    setAiHints([]);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        'draft-request',
+        { body: { text, postLanguage } },
+      );
+      const draft = data?.draft;
+      if (invokeError || data?.error || !draft) throw invokeError ?? new Error('No draft');
+
+      if (draft.urgent === true) {
+        setAiUrgent(true);
+        return;
+      }
+      if (draft.title) setTitle(String(draft.title).slice(0, 120));
+      if (HELP_TYPES.includes(draft.help_type)) setCategory(draft.help_type);
+      if (draft.description) setDescription(String(draft.description).slice(0, 2000));
+      setAiHints(
+        Array.isArray(draft.missing_info) ? draft.missing_info.slice(0, 2) : [],
+      );
+      setNeededSkills(Array.isArray(draft.needed_skills) ? draft.needed_skills : []);
+      setDetectedLanguage(draft.detected_language || null);
+    } catch {
+      setAiError(
+        "The assistant isn't available right now. You can write your post yourself.",
+      );
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   async function publishRequest() {
     const cleanTitle = title.trim();
     const cleanDescription = description.trim();
     const neighborhood = (area || 'Montréal').trim();
 
-    if (!userId || cleanTitle.length < 5 || cleanDescription.length < 10 || !neighborhood) {
+    if (!userId || !['seeker', 'both'].includes(userRole)) {
+      setError('Only members and people with both roles can post requests.');
+      return;
+    }
+
+    if (
+      cleanTitle.length < 5 ||
+      cleanDescription.length < 10 ||
+      !neighborhood
+    ) {
       setError('Add a title, at least 10 characters of detail, and a neighbourhood.');
       return;
     }
@@ -879,6 +972,8 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
           help_type: category,
           neighborhood,
           status: 'open',
+          needed_skills: neededSkills ?? [],
+          preferred_language: detectedLanguage || null,
         })
         .select(
           'id, requester_id, title, description, help_type, neighborhood, status, created_at',
@@ -894,12 +989,19 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
       setTitle('');
       setDescription('');
       setCategory('companionship');
+      setAiText('');
+      setAiError('');
+      setAiUrgent(false);
+      setAiHints([]);
+      setNeededSkills([]);
+      setDetectedLanguage(null);
       setEditing(false);
     } catch (submitError) {
       setError(
-        submitError instanceof Error
-          ? submitError.message
-          : 'Could not publish your request. Try again.',
+        getErrorMessage(
+          submitError,
+          'Could not publish your request. Try again.',
+        ),
       );
     } finally {
       setSaving(false);
@@ -907,7 +1009,13 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   }
 
   async function offerToHelp(requestId) {
-    if (!userId || !rulesAccepted) return;
+    if (
+      !userId ||
+      !['volunteer', 'both'].includes(userRole) ||
+      !rulesAccepted
+    ) {
+      return;
+    }
     setBusyAction(requestId + ':offer');
     setError('');
     try {
@@ -931,6 +1039,45 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
         actionError instanceof Error
           ? actionError.message
           : 'Could not send your offer. Refresh and try again.',
+      );
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function deleteRequest(request) {
+    if (
+      request.requester_id !== userId ||
+      request.status !== 'open' ||
+      busyAction
+    ) {
+      return;
+    }
+
+    setBusyAction(request.id + ':delete');
+    setError('');
+    try {
+      const { data, error: deleteError } = await supabase
+        .from('help_requests')
+        .delete()
+        .eq('id', request.id)
+        .select('id')
+        .maybeSingle();
+      if (deleteError) throw deleteError;
+      if (!data) throw new Error('This request was not deleted. Refresh and try again.');
+      setRequests((previous) =>
+        previous.filter((item) => item.id !== request.id),
+      );
+      setMatches((previous) =>
+        previous.filter((match) => match.help_request_id !== request.id),
+      );
+      setReviews((previous) =>
+        previous.filter((review) => review.help_request_id !== request.id),
+      );
+      setConfirmDeleteId(null);
+    } catch (deleteError) {
+      setError(
+        getErrorMessage(deleteError, 'Could not delete your request. Try again.'),
       );
     } finally {
       setBusyAction('');
@@ -1014,6 +1161,15 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
       contentContainerStyle={s.content}
     >
       <Text style={s.title}>Community help</Text>
+      {userRole && (
+        <Text style={s.body}>
+          {userRole === 'seeker'
+            ? 'Your requests and volunteer offers are shown here.'
+            : userRole === 'volunteer'
+              ? 'Browse open requests and offer help. Volunteers cannot post requests.'
+              : 'Post your own requests and offer help on open requests.'}
+        </Text>
+      )}
       <View style={s.card}>
         <Text style={s.section}>Community rules · v1.0</Text>
         <Text style={s.body}>{RULES}</Text>
@@ -1023,16 +1179,57 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
           onPress={agree}
         />
       </View>
-      <Button
-        label={editing ? 'Cancel request' : 'Post a request'}
-        disabled={!rulesAccepted}
-        onPress={() => {
-          setError('');
-          setEditing(!editing);
-        }}
-      />
-      {editing && (
+      {['seeker', 'both'].includes(userRole) && (
+        <Button
+          label={editing ? 'Cancel request' : 'Post a request'}
+          disabled={!rulesAccepted}
+          onPress={() => {
+            setError('');
+            setEditing(!editing);
+          }}
+        />
+      )}
+      {editing && ['seeker', 'both'].includes(userRole) && (
         <View style={s.card}>
+          <Text style={s.bold}>Describe what you need, in any language</Text>
+          <TextInput
+            accessibilityLabel="Describe what you need, in any language"
+            style={s.input}
+            multiline
+            placeholderTextColor={C.placeholder}
+            placeholder="Write it the way you would say it"
+            value={aiText}
+            onChangeText={setAiText}
+            maxLength={3000}
+          />
+          <Choices
+            title="Post language"
+            values={['en', 'fr']}
+            labels={['English', 'Français']}
+            value={postLanguage}
+            change={setPostLanguage}
+          />
+          <Button
+            label={aiBusy ? 'Writing…' : 'Write my post'}
+            disabled={aiBusy || !aiText.trim()}
+            onPress={writeDraft}
+          />
+          {!!aiError && (
+            <Text accessibilityLiveRegion="polite" style={s.meta}>
+              {aiError}
+            </Text>
+          )}
+          {aiUrgent && (
+            <View accessibilityLiveRegion="assertive" style={[s.card, s.urgentCard]}>
+              <Text style={[s.bold, s.urgentText]}>
+                This sounds urgent. Call 911 now, or 811 for health advice.
+              </Text>
+              <View style={s.row}>
+                <Button label="Call 911" onPress={() => Linking.openURL('tel:911')} />
+                <Button label="Call 811" onPress={() => Linking.openURL('tel:811')} />
+              </View>
+            </View>
+          )}
           <TextInput
             style={s.input}
             placeholderTextColor={C.placeholder}
@@ -1074,6 +1271,11 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
             onChangeText={setDescription}
             maxLength={2000}
           />
+          {aiHints.map((hint) => (
+            <Text key={hint} style={s.meta}>
+              Tip: {hint}
+            </Text>
+          ))}
           <Button
             label={saving ? 'Publishing…' : 'Publish request'}
             disabled={
@@ -1105,8 +1307,15 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
             (match) => match.status === 'accepted' || match.status === 'completed',
           );
           const pendingOffers =
-            request.requester_id === userId
-              ? requestMatches.filter((match) => match.status === 'pending')
+            request.requester_id === userId &&
+            ['seeker', 'both'].includes(userRole)
+              ? requestMatches.filter(
+                  (match) =>
+                    match.status === 'pending' &&
+                    ['volunteer', 'both'].includes(
+                      requesterRoles[match.volunteer_id],
+                    ),
+                )
               : [];
           const requestReviews = reviews.filter(
             (review) => review.help_request_id === request.id,
@@ -1131,7 +1340,41 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
                   (request.requester_id === userId ? displayName || 'You' : 'Neighbour')}
               </Text>
 
-              {request.requester_id !== userId &&
+              {request.requester_id === userId &&
+                request.status === 'open' && (
+                  confirmDeleteId === request.id ? (
+                    <View>
+                      <Text style={s.meta}>
+                        Delete this request and its related offers? This cannot be undone.
+                      </Text>
+                      <Button
+                        label={
+                          busyAction === request.id + ':delete'
+                            ? 'Deleting…'
+                            : 'Confirm delete'
+                        }
+                        disabled={Boolean(busyAction)}
+                        onPress={() => deleteRequest(request)}
+                      />
+                      <Button
+                        soft
+                        label="Keep request"
+                        disabled={Boolean(busyAction)}
+                        onPress={() => setConfirmDeleteId(null)}
+                      />
+                    </View>
+                  ) : (
+                    <Button
+                      soft
+                      label="Delete my request"
+                      disabled={Boolean(busyAction)}
+                      onPress={() => setConfirmDeleteId(request.id)}
+                    />
+                  )
+                )}
+
+              {['volunteer', 'both'].includes(userRole) &&
+                request.requester_id !== userId &&
                 request.status === 'open' &&
                 !myOffer &&
                 rulesAccepted && (
@@ -1347,6 +1590,8 @@ const useS = makeStyles((C) => ({
   personRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   pickedCard: { borderColor: C.primary, borderWidth: 2 },
   proposalCard: { borderColor: C.yellow, borderWidth: 2 },
+  urgentCard: { backgroundColor: C.invertBg, borderColor: C.invertBg },
+  urgentText: { color: C.invertText },
   page: { flex: 1, backgroundColor: C.page },
   content: {
     width: '100%',
@@ -1459,6 +1704,11 @@ const useS = makeStyles((C) => ({
     borderRadius: 18,
     overflow: 'hidden',
   },
+  profilePicture: {
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+  },
   orbit: {
     position: 'absolute',
     width: '130%',
@@ -1556,6 +1806,22 @@ const initialPosts = [
 ];
 const matches = (query, ...values) =>
   values.join(' ').toLowerCase().includes(query.trim().toLowerCase());
+function getErrorMessage(error, fallback) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = error.message;
+    if (typeof message === 'string') {
+      const details =
+        'details' in error && typeof error.details === 'string'
+          ? error.details
+          : '';
+      const hint =
+        'hint' in error && typeof error.hint === 'string' ? error.hint : '';
+      return [message, details, hint].filter(Boolean).join(' ');
+    }
+  }
+  return fallback;
+}
 export default function CoucouSocial() {
   const { C, mode: themeMode } = useCoucouTheme();
   const s = useS();
@@ -1601,6 +1867,8 @@ export default function CoucouSocial() {
   }
   const [profileRating, setProfileRating] = useState(null);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [pictureSaving, setPictureSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -1617,7 +1885,7 @@ export default function CoucouSocial() {
         let profileData;
         const { data, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, role, languages, neighborhood, bio')
+          .select('id, display_name, role, languages, neighborhood, bio, avatar_url')
           .eq('id', user.id)
           .maybeSingle();
         if (profileError) throw profileError;
@@ -1631,7 +1899,7 @@ export default function CoucouSocial() {
           const { data: created, error: createError } = await supabase
             .from('profiles')
             .upsert({ id: user.id, display_name: fallbackName.slice(0, 80) })
-            .select('id, display_name, role, languages, neighborhood, bio')
+            .select('id, display_name, role, languages, neighborhood, bio, avatar_url')
             .single();
           if (createError) throw createError;
           profileData = created;
@@ -1688,6 +1956,118 @@ export default function CoucouSocial() {
       setTrail([]);
     } else go({ kind: 'profile', name });
   };
+  async function changeRole(role) {
+    if (!currentUserId || roleSaving) return;
+
+    setRoleSaving(true);
+    setNotice('');
+    try {
+      const { error: roleError } = await supabase.rpc('change_my_role', {
+        target_role: role,
+      });
+      if (roleError) throw roleError;
+
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, display_name, role, languages, neighborhood, bio, avatar_url')
+        .eq('id', currentUserId)
+        .single();
+      if (profileError) throw profileError;
+      if (updatedProfile.role !== role) {
+        throw new Error('The saved role did not match the selected role.');
+      }
+      setCurrentProfile(updatedProfile);
+      setActivePortal(role === 'seeker' ? 'member' : role);
+      setNotice('Your role was saved to your account.');
+      close();
+    } catch (roleError) {
+      const errorMessage =
+        roleError instanceof Error
+          ? roleError.message
+          : typeof roleError === 'object' &&
+              roleError !== null &&
+              'message' in roleError &&
+              typeof roleError.message === 'string'
+            ? roleError.message
+            : 'Could not update your role.';
+      setNotice(
+        errorMessage,
+      );
+    } finally {
+      setRoleSaving(false);
+    }
+  }
+  async function changeProfilePicture() {
+    if (!currentUserId || pictureSaving) return;
+
+    setPictureSaving(true);
+    setNotice('');
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        base64: true,
+      });
+      if (result.canceled) return;
+
+      const image = result.assets[0];
+      if (!image?.base64) {
+        throw new Error('The selected photo could not be read. Please try another photo.');
+      }
+
+      const mimeType = image.mimeType || 'image/jpeg';
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
+        throw new Error('Choose a JPEG, PNG, or WebP image.');
+      }
+
+      if (image.base64.length > (5 * 1024 * 1024 * 4) / 3 + 4) {
+        throw new Error('Choose a photo smaller than 5 MB.');
+      }
+      const binary = atob(image.base64);
+      if (binary.length > 5 * 1024 * 1024) {
+        throw new Error('Choose a photo smaller than 5 MB.');
+      }
+      const imageData = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        imageData[index] = binary.charCodeAt(index);
+      }
+
+      const filePath = `${currentUserId}/profile-picture`;
+      const { error: uploadError } = await supabase.storage
+        .from('coucou-profile-pictures')
+        .upload(filePath, imageData, {
+          cacheControl: '3600',
+          contentType: mimeType,
+          upsert: true,
+        });
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrl } = supabase.storage
+        .from('coucou-profile-pictures')
+        .getPublicUrl(filePath);
+      const avatarUrl = `${publicUrl.publicUrl}?v=${Date.now()}`;
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: avatarUrl })
+        .eq('id', currentUserId)
+        .select('id, display_name, role, languages, neighborhood, bio, avatar_url')
+        .single();
+      if (profileError) throw profileError;
+
+      setCurrentProfile(updatedProfile);
+      setNotice('Profile picture updated.');
+    } catch (pictureError) {
+      setNotice(
+        pictureError instanceof Error
+          ? pictureError.message
+          : 'Could not update your profile picture.',
+      );
+    } finally {
+      setPictureSaving(false);
+    }
+  }
   const inArea = (value) => !area || area === value;
   const filteredPosts = posts.filter(
     (p) =>
@@ -1788,6 +2168,7 @@ export default function CoucouSocial() {
           <CommunityBoard
             area={area}
             displayName={currentProfile?.display_name}
+            role={currentProfile?.role}
             rulesAccepted={rulesAccepted}
             agree={() => setRulesAccepted(true)}
           />
@@ -1852,11 +2233,29 @@ export default function CoucouSocial() {
             {(!detail && tab === 'Me') || author ? (
               <>
                 <View style={s.portrait}>
-                  <View style={s.orbit} />
-                  <View style={s.sun}>
-                    <Text style={s.monogram}>{author?.initials ?? 'ME'}</Text>
-                  </View>
+                  {!author && currentProfile?.avatar_url ? (
+                    <Image
+                      source={{ uri: currentProfile.avatar_url }}
+                      style={s.profilePicture}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <>
+                      <View style={s.orbit} />
+                      <View style={s.sun}>
+                        <Text style={s.monogram}>{author?.initials ?? 'ME'}</Text>
+                      </View>
+                    </>
+                  )}
                 </View>
+                {!author && (
+                  <Button
+                    soft
+                    disabled={pictureSaving}
+                    label={pictureSaving ? 'Updating photo…' : 'Change profile picture'}
+                    onPress={changeProfilePicture}
+                  />
+                )}
                 <Text style={s.title}>
                   {author?.name ?? currentProfile?.display_name ?? 'My profile'}
                 </Text>
@@ -1955,17 +2354,10 @@ export default function CoucouSocial() {
                       label="Community rules"
                       onPress={() => setModal('rules')}
                     />
-                    <Text style={s.meta}>
-                      Blocked members: {blocked.length} · Reports sent:{' '}
-                      {reports.length}
-                    </Text>
                     <Button
                       soft
-                      label="Sign out"
-                      onPress={async () => {
-                        const { error } = await supabase.auth.signOut();
-                        if (error) setNotice(error.message);
-                      }}
+                      label="Change role"
+                      onPress={() => setModal('role')}
                     />
                   </>
                 )}
@@ -1980,6 +2372,12 @@ export default function CoucouSocial() {
                   .map(postCard)}
                 {!author && !posts.some((p) => p.author === 'You') && (
                   <Text style={s.body}>Your posts will appear here.</Text>
+                )}
+                {!author && (
+                  <Text style={[s.meta, { color: '#C62828' }]}>
+                    Blocked members: {blocked.length} · Reports sent:{' '}
+                    {reports.length}
+                  </Text>
                 )}
               </>
             ) : tab === 'Feed' ? (
@@ -2130,6 +2528,32 @@ export default function CoucouSocial() {
                       close();
                     }}
                   />
+                </>
+              ) : modal === 'role' ? (
+                <>
+                  <Text style={s.title}>Change your role</Text>
+                  <Text style={s.body}>
+                    Your choice is saved to your profile and membership records.
+                  </Text>
+                  {[
+                    { value: 'seeker', label: 'Member' },
+                    { value: 'volunteer', label: 'Volunteer' },
+                    { value: 'both', label: 'Both' },
+                  ].map((role) => (
+                    <Button
+                      key={role.value}
+                      soft={currentProfile?.role !== role.value}
+                      label={
+                        roleSaving
+                          ? 'Saving…'
+                          : currentProfile?.role === role.value
+                            ? `${role.label} · Current`
+                            : role.label
+                      }
+                      disabled={roleSaving || currentProfile?.role === role.value}
+                      onPress={() => changeRole(role.value)}
+                    />
+                  ))}
                 </>
               ) : modal === 'post' ? (
                 <>

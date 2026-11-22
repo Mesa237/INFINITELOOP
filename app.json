@@ -26,11 +26,18 @@
     "plugins": [
       "expo-router",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow CouCou Montréal to use a photo as your profile picture.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/logo-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#FFF078",
+          "image": "./assets/images/splash-paw.png",
+          "imageWidth": 240
         }
       ],
       "expo-sqlite"
