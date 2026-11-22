@@ -1549,7 +1549,11 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen }) {
                   .map((k) => SKILL_OPTIONS.find(([v]) => v === k)?.[1] ?? k)
                   .join(', ')
               : firstName + ' is waiting.'
-            : 'Your request is live.'}
+            : row.status === 'matched'
+              ? 'A volunteer is helping you.'
+              : row.status === 'completed'
+                ? 'Done. Thank you!'
+                : 'Your request is live.'}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', gap: 6 }}>
           <Text
@@ -1868,14 +1872,15 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
 
 // Real help requests for the home feed. Row-level security decides what each
 // person sees: volunteers see open requests, members see their own.
-function LatestRequests({ area, blocked, role, onOpen }) {
+function LatestRequests({ area, blocked, role, onOpen, mode }) {
   const s = useS();
   const { C } = useCoucouTheme();
   const [rows, setRows] = useState([]);
   const [people, setPeople] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const isVolunteer = role === 'volunteer' || role === 'both';
+  // mode 'open' = requests to help with, 'mine' = my own requests.
+  const isVolunteer = mode ? mode === 'open' : role === 'volunteer' || role === 'both';
 
   useEffect(() => {
     let active = true;
@@ -1900,9 +1905,10 @@ function LatestRequests({ area, blocked, role, onOpen }) {
             .from('help_requests')
             .select('id, requester_id, title, help_type, neighborhood, status, created_at')
             .eq('requester_id', user.id)
+            .neq('status', 'cancelled')
             .order('created_at', { ascending: false })
             .limit(10);
-          if (area) query = query.eq('neighborhood', area);
+          // Your own requests always show, whatever area is selected.
           const { data: own, error: loadError } = await query;
           if (loadError) throw loadError;
           data = own;
@@ -1928,7 +1934,7 @@ function LatestRequests({ area, blocked, role, onOpen }) {
     }
     if (role) load();
     const channel = supabase
-      .channel('home-help-requests')
+      .channel('home-help-requests-' + (isVolunteer ? 'open' : 'mine'))
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'help_requests' },
@@ -3605,6 +3611,18 @@ export default function CoucouSocial() {
                   role={currentProfile?.role}
                   onOpen={(requestId) => openHelp(requestId)}
                 />
+                {currentProfile?.role === 'both' && (
+                  <>
+                    <Text style={s.section}>Your requests</Text>
+                    <LatestRequests
+                      mode="mine"
+                      area={area}
+                      blocked={blocked}
+                      role={currentProfile?.role}
+                      onOpen={(requestId) => openHelp(requestId)}
+                    />
+                  </>
+                )}
               </>
             ) : tab === 'Discover' ? (
               <>
