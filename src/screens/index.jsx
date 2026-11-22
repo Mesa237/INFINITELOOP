@@ -795,9 +795,55 @@ function ProposalCard({ proposal, userId, partnerName, busy, onAnswer }) {
   );
 }
 
+function ChatAvatar({ name, url, size = 40 }) {
+  const { C } = useCoucouTheme();
+  const box = {
+    width: size,
+    height: size,
+    borderRadius: size / 2,
+    backgroundColor: C.lilac,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  };
+  if (url) {
+    return (
+      <Image
+        accessibilityLabel={(name || 'Neighbour') + ' profile picture'}
+        source={{ uri: url }}
+        style={box}
+      />
+    );
+  }
+  const initials = String(name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+  return (
+    <View accessibilityLabel={(name || 'Neighbour') + ' initials'} style={box}>
+      <Text style={{ color: C.onAccent, fontWeight: '900', fontSize: size * 0.38 }}>
+        {initials || '?'}
+      </Text>
+    </View>
+  );
+}
+
+function chatTime(value) {
+  const date = new Date(value);
+  const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return date.toDateString() === new Date().toDateString()
+    ? time
+    : date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · ' + time;
+}
+
 function MatchConversation({ matchId, partnerName }) {
   const { C } = useCoucouTheme();
   const s = useS();
+  const social = useSocial();
+  const [partnerAvatar, setPartnerAvatar] = useState(null);
+  const [requestTitle, setRequestTitle] = useState('');
   const [userId, setUserId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
@@ -822,7 +868,11 @@ function MatchConversation({ matchId, partnerName }) {
         } = await supabase.auth.getUser();
         const [{ data: match }, { data: rows, error: proposalError }] =
           await Promise.all([
-            supabase.from('matches').select('volunteer_id').eq('id', matchId).maybeSingle(),
+            supabase
+              .from('matches')
+              .select('volunteer_id, help_request_id')
+              .eq('id', matchId)
+              .maybeSingle(),
             supabase
               .from('meeting_proposals')
               .select(PROPOSAL_FIELDS)
@@ -833,6 +883,26 @@ function MatchConversation({ matchId, partnerName }) {
         if (active) {
           setIsVolunteer(!!user && match?.volunteer_id === user.id);
           setProposals(rows ?? []);
+        }
+        if (match?.help_request_id) {
+          const { data: request } = await supabase
+            .from('help_requests')
+            .select('requester_id, title')
+            .eq('id', match.help_request_id)
+            .maybeSingle();
+          const partnerId =
+            user && match.volunteer_id === user.id
+              ? request?.requester_id
+              : match.volunteer_id;
+          if (active && request?.title) setRequestTitle(request.title);
+          if (partnerId) {
+            const { data: partner } = await supabase
+              .from('profiles')
+              .select('avatar_url')
+              .eq('id', partnerId)
+              .maybeSingle();
+            if (active) setPartnerAvatar(partner?.avatar_url || null);
+          }
         }
       } catch {
         if (active) setMeetError('Meeting proposals could not be loaded right now.');
@@ -980,9 +1050,21 @@ function MatchConversation({ matchId, partnerName }) {
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={s.card}>
-        <View style={s.header}>
-          <Text style={s.title}>{partnerName}</Text>
+      <View style={{ flex: 1 }}>
+        <View style={social.chatHeading}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <ChatAvatar name={partnerName} url={partnerAvatar} />
+            <View style={{ flex: 1 }}>
+              <Text style={[s.bold, { color: C.onAccent }]} numberOfLines={1}>
+                {partnerName}
+              </Text>
+              {!!requestTitle && (
+                <Text style={[s.meta, { color: C.onAccentMuted }]} numberOfLines={1}>
+                  {requestTitle}
+                </Text>
+              )}
+            </View>
+          </View>
           <Button
             soft={meetOpen}
             label={meetOpen ? 'Close' : 'Meet'}
@@ -1035,25 +1117,24 @@ function MatchConversation({ matchId, partnerName }) {
             ) : (
             <View
               key={message.id}
-              style={[
-                s.card,
-                {
-                  alignSelf: message.sender_id === userId ? 'flex-end' : 'flex-start',
-                  maxWidth: '90%',
-                  backgroundColor:
-                    message.sender_id === userId ? C.softBg : C.card,
-                },
-              ]}
+              style={[social.bubble, message.sender_id === userId && social.mine]}
             >
-              <Text style={s.body}>{message.body}</Text>
-              <Text style={s.meta}>
-                {new Date(message.created_at).toLocaleString()}
+              <Text style={[s.body, social.bubbleText]}>{message.body}</Text>
+              <Text
+                style={{
+                  color: C.onAccentMuted,
+                  fontSize: 11,
+                  marginTop: 4,
+                  alignSelf: 'flex-end',
+                }}
+              >
+                {chatTime(message.created_at)}
               </Text>
             </View>
             ),
           )}
         </ScrollView>
-        <View style={s.row}>
+        <View style={social.composer}>
           <TextInput
             accessibilityLabel="Write a message"
             style={[s.input, { flex: 1 }]}
