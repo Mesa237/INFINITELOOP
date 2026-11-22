@@ -71,6 +71,13 @@ const HELP_TYPES = [
 ];
 // Bump RULES_VERSION when the rules change: everyone is asked to agree again.
 const RULES_VERSION = '2026-11';
+const TAB_ICONS = {
+  Feed: 'home',
+  Discover: 'compass',
+  Services: 'phone',
+  Inbox: 'inbox',
+  Me: 'user',
+};
 const RULES = [
   ['Be kind and respectful', 'No harassment, hate speech, discrimination or threats. Treat every neighbour the way you want to be treated.'],
   ['Protect privacy', 'Do not share home addresses, ID, banking or health details in posts or chats. Never share someone else\'s information without their permission.'],
@@ -1436,7 +1443,7 @@ const POSTER_HOOKS = {
 };
 
 function PosterAvatar({ name, url, theme }) {
-  const size = 150;
+  const size = 112;
   const box = {
     width: size,
     height: size,
@@ -1485,12 +1492,12 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
       style={({ pressed }) => [
         {
           backgroundColor: theme.bg,
-          borderRadius: 26,
-          padding: 20,
-          minHeight: 420,
+          borderRadius: 28,
+          paddingHorizontal: 24,
+          paddingTop: 26,
+          paddingBottom: 24,
           overflow: 'hidden',
-          justifyContent: 'space-between',
-          gap: 14,
+          gap: 22,
         },
         pressed && { opacity: 0.85 },
       ]}
@@ -1500,10 +1507,10 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
           style={{
             fontFamily: POSTER_FONT,
             fontWeight: '900',
-            fontSize: 22,
+            fontSize: 19,
             color: theme.ink,
             textTransform: 'uppercase',
-            letterSpacing: -0.3,
+            letterSpacing: 0.2,
           }}
         >
           {small}
@@ -1512,8 +1519,8 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
           style={{
             fontFamily: POSTER_FONT,
             fontWeight: '900',
-            fontSize: 46,
-            lineHeight: 46,
+            fontSize: 40,
+            lineHeight: 42,
             color: theme.accent,
             textTransform: 'uppercase',
             letterSpacing: -1,
@@ -1523,7 +1530,7 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
         </Text>
         <Text
           numberOfLines={2}
-          style={{ color: theme.ink, fontSize: 16, fontWeight: '800', marginTop: 8 }}
+          style={{ color: theme.ink, fontSize: 17, lineHeight: 24, fontWeight: '700', marginTop: 12 }}
         >
           {row.title}
         </Text>
@@ -1566,7 +1573,7 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
         </View>
       )}
 
-      <View style={{ gap: 4 }}>
+      <View style={{ gap: 6 }}>
         <Text
           style={{
             fontFamily: POSTER_FONT,
@@ -1594,10 +1601,10 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
             style={{
               fontFamily: POSTER_FONT,
               fontWeight: '900',
-              fontSize: 40,
-              lineHeight: 40,
+              fontSize: 30,
+              lineHeight: 32,
               color: theme.accent,
-              letterSpacing: -1.5,
+              letterSpacing: -1,
             }}
           >
             COUCOU
@@ -1606,10 +1613,10 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
             style={{
               fontFamily: POSTER_FONT,
               fontWeight: '900',
-              fontSize: 16,
+              fontSize: 14,
               color: theme.ink,
               textTransform: 'uppercase',
-              marginBottom: 4,
+              marginBottom: 3,
             }}
           >
             {isVolunteer ? '& lend a hand!' : '& see your offers!'}
@@ -2880,9 +2887,10 @@ const useS = makeStyles((C) => ({
     width: '100%',
     maxWidth: 660,
     alignSelf: 'center',
-    padding: 18,
-    paddingBottom: 44,
-    gap: 16,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 64,
+    gap: 24,
   },
   header: {
     flexDirection: 'row',
@@ -2891,8 +2899,8 @@ const useS = makeStyles((C) => ({
     justifyContent: 'space-between',
     gap: 8,
   },
-  brand: { fontSize: 23, letterSpacing: -1, fontWeight: '900', color: C.text },
-  logoImg: { width: 28, height: 28, borderRadius: 8 },
+  brand: { fontSize: 21, letterSpacing: -0.8, fontWeight: '900', color: C.text },
+  logoImg: { width: 32, height: 32, borderRadius: 9 },
   heroLogo: { position: 'absolute', top: -10, right: -10, width: 130, height: 130, opacity: 0.25 },
   pill: {
     backgroundColor: C.lilac,
@@ -2903,9 +2911,10 @@ const useS = makeStyles((C) => ({
   hero: {
     backgroundColor: C.yellow,
     borderRadius: 28,
-    padding: 22,
+    paddingHorizontal: 24,
+    paddingVertical: 26,
     overflow: 'hidden',
-    gap: 16,
+    gap: 12,
   },
   heroMark: {
     position: 'absolute',
@@ -2917,10 +2926,10 @@ const useS = makeStyles((C) => ({
   eyebrow: { color: C.onAccent, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
   heroTitle: {
     color: C.onAccent,
-    fontSize: 44,
-    lineHeight: 46,
+    fontSize: 40,
+    lineHeight: 42,
     fontWeight: '900',
-    letterSpacing: -2,
+    letterSpacing: -1.5,
   },
   tabs: {
     flexDirection: 'row',
@@ -2932,14 +2941,16 @@ const useS = makeStyles((C) => ({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 44,
-    borderRadius: 22,
+    gap: 3,
+    minHeight: 56,
+    marginHorizontal: 3,
+    borderRadius: 18,
   },
   active: { backgroundColor: C.primary },
   badge: {
     position: 'absolute',
-    top: 2,
-    right: 6,
+    top: 4,
+    right: 14,
     minWidth: 19,
     height: 19,
     paddingHorizontal: 5,
@@ -2954,7 +2965,7 @@ const useS = makeStyles((C) => ({
   tabLabel: {
     color: C.text,
     textAlign: 'center',
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
   },
   section: {
@@ -3469,21 +3480,24 @@ export default function CoucouSocial() {
         {detail ? (
           <Button soft label="‹ Back" onPress={back} />
         ) : (
-          <Text style={s.brand}>          <Image source={require('../../assets/images/logo.jpg')} style={s.logoImg} resizeMode="contain" /> CouCouMTL</Text>
+          <View style={social.brandRow}>
+            <Image source={require('../../assets/images/logo.jpg')} style={s.logoImg} resizeMode="contain" />
+            <Text style={s.brand}>CouCouMTL</Text>
+          </View>
         )}
         <View style={social.topRight}>
-          <Button
-            label="Sign out"
-            onPress={async () => {
-              const { error } = await supabase.auth.signOut();
-              if (error) setNotice(error.message);
-            }}
-          />
-          <Button
-            soft
-            label={area ?? 'Montréal ▾'}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={'Area: ' + (area ?? 'All of Montréal') + '. Change area'}
             onPress={() => setModal('location')}
-          />
+            style={({ pressed }) => [social.areaPill, pressed && { opacity: 0.6 }]}
+          >
+            <Feather name="map-pin" size={14} color={C.softText} />
+            <Text style={social.areaText} numberOfLines={1}>
+              {area ?? 'All MTL'}
+            </Text>
+            <Feather name="chevron-down" size={14} color={C.softText} />
+          </Pressable>
         </View>
       </View>
       {visitedHelp && (
@@ -3669,6 +3683,14 @@ export default function CoucouSocial() {
                     )}
                     <Button
                       soft
+                      label="Sign out"
+                      onPress={async () => {
+                        const { error } = await supabase.auth.signOut();
+                        if (error) setNotice(error.message);
+                      }}
+                    />
+                    <Button
+                      soft
                       label="Change role"
                       onPress={() => setModal('role')}
                     />
@@ -3690,7 +3712,7 @@ export default function CoucouSocial() {
               <>
                 <View style={s.hero}>
                   <Image source={require('../../assets/images/logo.jpg')} style={s.heroLogo} resizeMode="contain" />
-                  <Text style={s.eyebrow}>MONTRÉAL · NEIGHBOURS HELPING NEIGHBOURS</Text>
+                  <Text style={s.eyebrow}>MONTRÉAL</Text>
                   <Text style={[s.heroTitle, { fontFamily: POSTER_FONT, textTransform: 'uppercase' }]}>
                     {currentProfile?.role === 'volunteer' || currentProfile?.role === 'both'
                       ? 'Someone nearby\nneeds you.'
@@ -3815,7 +3837,12 @@ export default function CoucouSocial() {
               onPress={() => setTab(t)}
               style={[s.tab, t === tab && s.active]}
             >
-              <Text style={[s.tabLabel, t === tab && { color: C.onPrimary }]}>
+              <Feather
+                name={TAB_ICONS[t]}
+                size={20}
+                color={t === tab ? C.onPrimary : C.muted}
+              />
+              <Text style={[s.tabLabel, t === tab ? { color: C.onPrimary } : { color: C.muted }]}>
                 {t}
               </Text>
               {t === 'Inbox' && unreadCount > 0 && (
@@ -4077,17 +4104,34 @@ const useSocial = makeStyles((C) => ({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingTop: 6,
+    paddingBottom: 12,
+    gap: 12,
   },
   topRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 1,
   },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  areaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: C.softBg,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    maxWidth: 170,
+  },
+  areaText: { color: C.softText, fontWeight: '800', fontSize: 14, flexShrink: 1 },
   nav: {
     flexDirection: 'row',
-    padding: 6,
+    paddingHorizontal: 8,
+    paddingTop: 8,
+    paddingBottom: 4,
     borderTopWidth: 1,
     borderColor: C.border,
     backgroundColor: C.card,
