@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -178,6 +179,541 @@ function Communities() {
     </View>
   );
 }
+// Neighbourhoods known to suggest_meeting_places (public.neighborhood_centres).
+const NEIGHBOURHOODS = [
+  'Downtown',
+  'Le Plateau',
+  'Mile End',
+  'Verdun',
+  'Côte-des-Neiges',
+  'Notre-Dame-de-Grâce',
+  'Saint-Henri',
+  'Griffintown',
+  'Old Montréal',
+  'Outremont',
+  'Rosemont',
+  'Villeray',
+  'Hochelaga',
+  'Ahuntsic',
+  'Montréal-Nord',
+  'Saint-Laurent',
+  'Lachine',
+];
+const CHAT_STATUSES = ['pending', 'accepted', 'completed'];
+const initialsOf = (name) =>
+  (name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('') || '?';
+
+function Avatar({ name, url, size = 44 }) {
+  const s = useS();
+  const box = { width: size, height: size, borderRadius: size / 2 };
+  if (url) {
+    return (
+      <Image
+        accessibilityLabel={(name || 'Neighbour') + ' profile picture'}
+        source={{ uri: url }}
+        style={[s.avatar, box]}
+      />
+    );
+  }
+  return (
+    <View accessibilityLabel={(name || 'Neighbour') + ' initials'} style={[s.avatar, box]}>
+      <Text style={[s.avatarText, { fontSize: size * 0.38 }]}>{initialsOf(name)}</Text>
+    </View>
+  );
+}
+
+function PersonRow({ name, url, onChat }) {
+  const s = useS();
+  return (
+    <View style={s.personRow}>
+      <Avatar name={name} url={url} />
+      <Text style={[s.bold, { flex: 1 }]} numberOfLines={1}>
+        {name || 'Neighbour'}
+      </Text>
+      {onChat && <Button soft label="Open chat" onPress={onChat} />}
+    </View>
+  );
+}
+
+// Next 7 days and hourly slots, so picking a time works the same on iOS, Android and web.
+function nextDays() {
+  const days = [];
+  const today = new Date();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+    days.push({
+      key: d.toDateString(),
+      date: d,
+      label:
+        i === 0
+          ? 'Today'
+          : i === 1
+            ? 'Tomorrow'
+            : d.toLocaleDateString('en-CA', { weekday: 'short', day: 'numeric' }),
+    });
+  }
+  return days;
+}
+const HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+const hourLabel = (h) => (h < 12 ? h + ' AM' : h === 12 ? '12 PM' : h - 12 + ' PM');
+const formatMeetAt = (iso) =>
+  iso
+    ? new Date(iso).toLocaleString('en-CA', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : 'Time to confirm';
+const OPTION_LABELS = {
+  member: 'Member’s location',
+  midpoint: 'Fair midpoint',
+  volunteer: 'Volunteer’s chosen place',
+};
+
+function mapsUrl(proposal) {
+  const hasCoords =
+    typeof proposal.lat === 'number' && typeof proposal.lng === 'number';
+  const name = encodeURIComponent(proposal.place_name);
+  if (Platform.OS === 'ios') {
+    return hasCoords
+      ? `https://maps.apple.com/?ll=${proposal.lat},${proposal.lng}&q=${name}`
+      : `https://maps.apple.com/?q=${name}`;
+  }
+  return hasCoords
+    ? `https://www.google.com/maps/search/?api=1&query=${proposal.lat},${proposal.lng}`
+    : `https://www.google.com/maps/search/?api=1&query=${name}`;
+}
+
+const byCreated = (a, b) => new Date(a.created_at) - new Date(b.created_at);
+function upsertById(list, row) {
+  const i = list.findIndex((item) => item.id === row.id);
+  if (i === -1) return [...list, row].sort(byCreated);
+  const next = list.slice();
+  next[i] = { ...next[i], ...row };
+  return next;
+}
+
+function MatchChat({ match, request, userId, names, avatars, onClose }) {
+  const { C } = useCoucouTheme();
+  const s = useS();
+  const social = useSocial();
+  const isMember = request.requester_id === userId;
+  const otherId = isMember ? match.volunteer_id : request.requester_id;
+  const otherName = names[otherId] || (isMember ? 'Volunteer' : 'Member');
+  const scroll = useRef(null);
+
+  const [messages, setMessages] = useState([]);
+  const [proposals, setProposals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
+
+  const [meetOpen, setMeetOpen] = useState(false);
+  const [option, setOption] = useState('');
+  const [placeName, setPlaceName] = useState('');
+  const [places, setPlaces] = useState([]);
+  const [placesLoading, setPlacesLoading] = useState(false);
+  const [pickedPlace, setPickedPlace] = useState(null);
+  const [day, setDay] = useState('');
+  const [hour, setHour] = useState('');
+  const [meetBusy, setMeetBusy] = useState(false);
+  const [meetError, setMeetError] = useState('');
+  const [busyProposal, setBusyProposal] = useState('');
+  const days = nextDays();
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const [{ data: messageRows, error: messageError }, { data: proposalRows, error: proposalError }] =
+          await Promise.all([
+            supabase
+              .from('messages')
+              .select('id, match_id, sender_id, body, created_at')
+              .eq('match_id', match.id)
+              .order('created_at', { ascending: true }),
+            supabase
+              .from('meeting_proposals')
+              .select(
+                'id, match_id, proposed_by, option, place_name, public_place_id, lat, lng, meet_at, status, created_at',
+              )
+              .eq('match_id', match.id)
+              .order('created_at', { ascending: true }),
+          ]);
+        if (messageError) throw messageError;
+        if (proposalError) throw proposalError;
+        if (active) {
+          setMessages(messageRows ?? []);
+          setProposals(proposalRows ?? []);
+        }
+      } catch {
+        if (active) setLoadError('Could not load this chat. Check your connection and try again.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    load();
+
+    const filter = `match_id=eq.${match.id}`;
+    const channel = supabase
+      .channel('match-chat:' + match.id)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter },
+        (payload) => setMessages((prev) => upsertById(prev, payload.new)),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'meeting_proposals', filter },
+        (payload) => {
+          if (payload.new?.id) setProposals((prev) => upsertById(prev, payload.new));
+        },
+      )
+      .subscribe();
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [match.id]);
+
+  async function send() {
+    const body = draft.trim();
+    if (!body || sending) return;
+    setSending(true);
+    setSendError('');
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({ match_id: match.id, sender_id: userId, body })
+        .select('id, match_id, sender_id, body, created_at')
+        .single();
+      if (error) throw error;
+      setMessages((prev) => upsertById(prev, data));
+      setDraft('');
+    } catch {
+      setSendError("Your message wasn't sent. Check your connection and try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function resetMeet() {
+    setOption('');
+    setPlaceName('');
+    setPlaces([]);
+    setPickedPlace(null);
+    setDay('');
+    setHour('');
+    setMeetError('');
+  }
+
+  async function chooseOption(next) {
+    setOption(next);
+    setMeetError('');
+    setPickedPlace(null);
+    if (next !== 'midpoint') return;
+    setPlacesLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('suggest_meeting_places', {
+        target_match_id: match.id,
+      });
+      if (error) throw error;
+      setPlaces(data ?? []);
+    } catch {
+      setPlaces([]);
+      setMeetError('Could not find meeting places right now. Try again, or choose a place yourself.');
+    } finally {
+      setPlacesLoading(false);
+    }
+  }
+
+  async function sendProposal() {
+    const chosenDay = days.find((d) => d.key === day);
+    if (!chosenDay || hour === '') return;
+    const meetAt = new Date(chosenDay.date);
+    meetAt.setHours(Number(hour), 0, 0, 0);
+    const row = {
+      match_id: match.id,
+      proposed_by: userId,
+      option,
+      meet_at: meetAt.toISOString(),
+    };
+    if (option === 'midpoint') {
+      if (!pickedPlace) return;
+      Object.assign(row, {
+        place_name: pickedPlace.name,
+        public_place_id: pickedPlace.place_id,
+        lat: pickedPlace.lat,
+        lng: pickedPlace.lng,
+      });
+    } else {
+      row.place_name = placeName.trim();
+    }
+    setMeetBusy(true);
+    setMeetError('');
+    try {
+      const { data, error } = await supabase
+        .from('meeting_proposals')
+        .insert(row)
+        .select(
+          'id, match_id, proposed_by, option, place_name, public_place_id, lat, lng, meet_at, status, created_at',
+        )
+        .single();
+      if (error) throw error;
+      setProposals((prev) => upsertById(prev, data));
+      resetMeet();
+      setMeetOpen(false);
+    } catch {
+      setMeetError("Your proposal wasn't sent. Check your connection and try again.");
+    } finally {
+      setMeetBusy(false);
+    }
+  }
+
+  async function answer(proposal, status) {
+    setBusyProposal(proposal.id);
+    setMeetError('');
+    try {
+      const { data, error } = await supabase
+        .from('meeting_proposals')
+        .update({ status })
+        .eq('id', proposal.id)
+        .select('id, status')
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error('Not updated');
+      setProposals((prev) => upsertById(prev, data));
+    } catch {
+      setMeetError('Could not update this proposal. Refresh the chat and try again.');
+    } finally {
+      setBusyProposal('');
+    }
+  }
+
+  const timeline = [
+    ...messages.map((m) => ({ kind: 'message', ...m })),
+    ...proposals.map((p) => ({ kind: 'proposal', ...p })),
+  ].sort(byCreated);
+
+  const myOptions = isMember ? ['member', 'midpoint'] : ['midpoint', 'volunteer'];
+  const myOptionLabels = isMember
+    ? ['My location', 'Fair midpoint']
+    : ['Fair midpoint', 'My chosen place'];
+  const placeReady =
+    option === 'midpoint' ? !!pickedPlace : placeName.trim().length >= 2;
+  const canPropose = !!option && placeReady && !!day && hour !== '' && !meetBusy;
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={social.chatHeading}>
+        <View style={[s.personRow, { flex: 1 }]}>
+          <Avatar name={otherName} url={avatars[otherId]} size={40} />
+          <View style={{ flex: 1 }}>
+            <Text style={[s.bold, { color: C.onAccent }]} numberOfLines={1}>
+              {otherName}
+            </Text>
+            <Text style={[s.meta, { color: C.onAccentMuted }]} numberOfLines={1}>
+              {request.title}
+            </Text>
+          </View>
+        </View>
+        <View style={s.row}>
+          <Button
+            soft
+            label={meetOpen ? 'Close' : 'Meet'}
+            onPress={() => {
+              if (meetOpen) resetMeet();
+              setMeetOpen(!meetOpen);
+            }}
+          />
+          <Button soft label="‹ Board" onPress={onClose} />
+        </View>
+      </View>
+      <ScrollView
+        ref={scroll}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={s.content}
+        onContentSizeChange={() => {
+          if (!meetOpen) scroll.current?.scrollToEnd({ animated: false });
+        }}
+      >
+        {meetOpen && (
+          <View style={s.card}>
+            <Text style={s.section}>Where should you meet?</Text>
+            <Choices
+              title="Choose an option"
+              values={myOptions}
+              labels={myOptionLabels}
+              value={option}
+              change={chooseOption}
+            />
+            {(option === 'member' || option === 'volunteer') && (
+              <TextInput
+                accessibilityLabel="Place name"
+                style={s.input}
+                placeholderTextColor={C.placeholder}
+                placeholder="Place name, e.g. Atwater Library"
+                value={placeName}
+                onChangeText={setPlaceName}
+                maxLength={200}
+              />
+            )}
+            {option === 'midpoint' &&
+              (placesLoading ? (
+                <Text style={s.meta}>Finding fair places…</Text>
+              ) : (
+                places.map((place) => {
+                  const mine = isMember ? place.member_km : place.volunteer_km;
+                  const theirs = isMember ? place.volunteer_km : place.member_km;
+                  const picked = pickedPlace?.place_id === place.place_id;
+                  return (
+                    <Pressable
+                      key={place.place_id}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: picked }}
+                      onPress={() => setPickedPlace(place)}
+                      style={[s.card, picked && s.pickedCard]}
+                    >
+                      <Text style={s.bold}>
+                        {picked ? '✓ ' : ''}
+                        {place.name}
+                      </Text>
+                      <Text style={s.meta}>
+                        You: {Number(mine).toFixed(1)} km · Them: {Number(theirs).toFixed(1)} km
+                      </Text>
+                    </Pressable>
+                  );
+                })
+              ))}
+            {!!option && (
+              <>
+                <Choices
+                  title="Day"
+                  values={days.map((d) => d.key)}
+                  labels={days.map((d) => d.label)}
+                  value={day}
+                  change={setDay}
+                />
+                <Choices
+                  title="Time"
+                  values={HOURS.map(String)}
+                  labels={HOURS.map(hourLabel)}
+                  value={hour}
+                  change={setHour}
+                />
+                <Button
+                  label={meetBusy ? 'Sending…' : 'Send proposal'}
+                  disabled={!canPropose}
+                  onPress={sendProposal}
+                />
+              </>
+            )}
+          </View>
+        )}
+        {!!meetError && (
+          <Text accessibilityLiveRegion="polite" style={{ color: C.error }}>
+            {meetError}
+          </Text>
+        )}
+        {loading ? (
+          <Text style={s.meta}>Loading chat…</Text>
+        ) : loadError ? (
+          <Text style={{ color: C.error }}>{loadError}</Text>
+        ) : !timeline.length ? (
+          <Text style={s.meta}>Say hello to {otherName}.</Text>
+        ) : null}
+        {timeline.map((item) =>
+          item.kind === 'message' ? (
+            <View
+              key={'m' + item.id}
+              style={[social.bubble, item.sender_id === userId && social.mine]}
+            >
+              <Text style={[s.body, social.bubbleText]}>{item.body}</Text>
+            </View>
+          ) : (
+            <View key={'p' + item.id} style={[s.card, s.proposalCard]}>
+              <Text style={s.meta}>
+                {OPTION_LABELS[item.option] ?? 'Meeting'} ·{' '}
+                {item.proposed_by === userId ? 'You proposed' : otherName + ' proposed'} ·{' '}
+                {item.status.toUpperCase()}
+              </Text>
+              <Text style={s.cardTitle}>{item.place_name}</Text>
+              <Text style={s.body}>{formatMeetAt(item.meet_at)}</Text>
+              {item.status === 'proposed' &&
+                (item.proposed_by === userId ? (
+                  <Button
+                    soft
+                    label="Cancel"
+                    disabled={busyProposal === item.id}
+                    onPress={() => answer(item, 'cancelled')}
+                  />
+                ) : (
+                  <View style={s.row}>
+                    <Button
+                      label="Accept"
+                      disabled={busyProposal === item.id}
+                      onPress={() => answer(item, 'accepted')}
+                    />
+                    <Button
+                      soft
+                      label="Decline"
+                      disabled={busyProposal === item.id}
+                      onPress={() => answer(item, 'declined')}
+                    />
+                  </View>
+                ))}
+              {item.status === 'accepted' && (
+                <Button
+                  label="Open in Maps"
+                  onPress={() => Linking.openURL(mapsUrl(item))}
+                />
+              )}
+            </View>
+          ),
+        )}
+      </ScrollView>
+      {!!sendError && (
+        <Text
+          accessibilityLiveRegion="polite"
+          style={{ color: C.error, paddingHorizontal: 12 }}
+        >
+          {sendError}
+        </Text>
+      )}
+      <View style={social.composer}>
+        <TextInput
+          accessibilityLabel="Message"
+          style={[s.input, { flex: 1 }]}
+          placeholderTextColor={C.placeholder}
+          placeholder="Write a message…"
+          value={draft}
+          onChangeText={setDraft}
+          maxLength={2000}
+        />
+        <Button
+          label={sending ? 'Sending…' : 'Send'}
+          disabled={sending || !draft.trim()}
+          onPress={send}
+        />
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
 function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   const { C } = useCoucouTheme();
   const s = useS();
@@ -199,6 +735,8 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   const [reviewingRequest, setReviewingRequest] = useState(null);
   const [stars, setStars] = useState('');
   const [reviewReason, setReviewReason] = useState('');
+  const [avatars, setAvatars] = useState({});
+  const [chatWith, setChatWith] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -250,10 +788,17 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
         ];
         let profiles = [];
         if (profileIds.length) {
-          const { data, error: profileError } = await supabase
+          // avatar_url is optional: fall back to names only if the column isn't there yet.
+          let { data, error: profileError } = await supabase
             .from('profiles')
-            .select('id, display_name')
+            .select('id, display_name, avatar_url')
             .in('id', profileIds);
+          if (profileError) {
+            ({ data, error: profileError } = await supabase
+              .from('profiles')
+              .select('id, display_name')
+              .in('id', profileIds));
+          }
           if (profileError) throw profileError;
           profiles = data ?? [];
         }
@@ -286,6 +831,11 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
           );
           setRequesterNames(
             Object.fromEntries(profiles.map((profile) => [profile.id, profile.display_name])),
+          );
+          setAvatars(
+            Object.fromEntries(
+              profiles.map((profile) => [profile.id, profile.avatar_url || null]),
+            ),
           );
         }
       } catch (loadError) {
@@ -443,6 +993,21 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
     }
   }
 
+  if (chatWith && userId) {
+    return (
+      <MatchChat
+        match={chatWith.match}
+        request={chatWith.request}
+        userId={userId}
+        names={requesterNames}
+        avatars={avatars}
+        onClose={() => setChatWith(null)}
+      />
+    );
+  }
+
+  const openChat = (match, request) => () => setChatWith({ match, request });
+
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -580,6 +1145,11 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
               {myOffer?.status === 'pending' &&
                 request.requester_id !== userId && (
                   <>
+                    <PersonRow
+                      name={requesterNames[request.requester_id] || 'Member'}
+                      url={avatars[request.requester_id]}
+                      onChat={openChat(myOffer, request)}
+                    />
                     <Text style={s.meta}>Your offer is waiting for a response.</Text>
                     <Button
                       soft
@@ -599,6 +1169,11 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
 
               {pendingOffers.map((offer) => (
                 <View key={offer.id} style={[s.card, { backgroundColor: C.page }]}>
+                  <PersonRow
+                    name={requesterNames[offer.volunteer_id] || 'Volunteer'}
+                    url={avatars[offer.volunteer_id]}
+                    onChat={openChat(offer, request)}
+                  />
                   <Text style={s.bold}>
                     Offer from {requesterNames[offer.volunteer_id] || 'a neighbour'}
                     {ratingsByProfile[offer.volunteer_id]?.review_count > 0
@@ -629,6 +1204,27 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
 
               {acceptedMatch && (
                 <View style={[s.card, { backgroundColor: C.page }]}>
+                  {isParticipant && (
+                    <PersonRow
+                      name={
+                        acceptedMatch.volunteer_id === userId
+                          ? requesterNames[request.requester_id] || 'Member'
+                          : requesterNames[acceptedMatch.volunteer_id] || 'Volunteer'
+                      }
+                      url={
+                        avatars[
+                          acceptedMatch.volunteer_id === userId
+                            ? request.requester_id
+                            : acceptedMatch.volunteer_id
+                        ]
+                      }
+                      onChat={
+                        CHAT_STATUSES.includes(acceptedMatch.status)
+                          ? openChat(acceptedMatch, request)
+                          : undefined
+                      }
+                    />
+                  )}
                   <Text style={s.bold}>
                     Volunteer: {requesterNames[acceptedMatch.volunteer_id] || 'Neighbour'}
                   </Text>
@@ -741,6 +1337,16 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
   );
 }
 const useS = makeStyles((C) => ({
+  avatar: {
+    backgroundColor: C.lilac,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarText: { color: C.onAccent, fontWeight: '900' },
+  personRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  pickedCard: { borderColor: C.primary, borderWidth: 2 },
+  proposalCard: { borderColor: C.yellow, borderWidth: 2 },
   page: { flex: 1, backgroundColor: C.page },
   content: {
     width: '100%',
@@ -972,6 +1578,27 @@ export default function CoucouSocial() {
   const [bio, setBio] = useState('');
   const [currentProfile, setCurrentProfile] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [neighbourhoodSaving, setNeighbourhoodSaving] = useState(false);
+  async function saveNeighbourhood(name) {
+    if (!currentUserId || neighbourhoodSaving) return;
+    setNeighbourhoodSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ neighborhood: name })
+        .eq('id', currentUserId)
+        .select('id, neighborhood')
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error('Not saved');
+      setCurrentProfile((prev) => ({ ...prev, neighborhood: data.neighborhood }));
+      setNotice('Neighbourhood saved.');
+    } catch {
+      setNotice('Could not save your neighbourhood. Try again.');
+    } finally {
+      setNeighbourhoodSaving(false);
+    }
+  }
   const [profileRating, setProfileRating] = useState(null);
   const [profileSaving, setProfileSaving] = useState(false);
 
@@ -1268,14 +1895,34 @@ export default function CoucouSocial() {
                     />
                   </>
                 ) : (
-                  <Button
-                    soft
-                    label="Edit bio"
-                    onPress={() => {
-                      setBioDraft(bio);
-                      setModal('edit');
-                    }}
-                  />
+                  <>
+                    <Button
+                      soft
+                      label="Edit bio"
+                      onPress={() => {
+                        setBioDraft(bio);
+                        setModal('edit');
+                      }}
+                    />
+                    {['volunteer', 'both'].includes(currentProfile?.role) &&
+                      !currentProfile?.neighborhood && (
+                        <View style={[s.card, s.proposalCard]}>
+                          <Text style={s.bold}>Set your neighbourhood</Text>
+                          <Text style={s.body}>
+                            When you offer help, we suggest a fair meeting place
+                            between your neighbourhood and the member&apos;s. Choose
+                            yours so the midpoint is accurate.
+                          </Text>
+                          <Choices
+                            title={neighbourhoodSaving ? 'Saving…' : 'Your neighbourhood'}
+                            values={NEIGHBOURHOODS}
+                            labels={NEIGHBOURHOODS}
+                            value=""
+                            change={saveNeighbourhood}
+                          />
+                        </View>
+                      )}
+                  </>
                 )}
                 {author ? (
                   <View style={s.row}>
