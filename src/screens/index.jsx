@@ -1231,8 +1231,6 @@ function CommunityBoard({
           );
         if (profile.role === 'seeker') {
           requestQuery = requestQuery.eq('requester_id', user.id);
-        } else if (profile.role === 'volunteer' && !requestId) {
-          requestQuery = requestQuery.eq('status', 'open');
         }
         if (requestId) {
           requestQuery = requestQuery.eq('id', requestId);
@@ -1577,7 +1575,7 @@ function CommunityBoard({
           {userRole === 'seeker'
             ? 'Your requests and volunteer offers are shown here.'
             : userRole === 'volunteer'
-              ? 'Browse open requests and offer help. Volunteers cannot post requests.'
+              ? 'Browse open requests, see your previous requests, and offer help. Volunteers cannot post new requests.'
               : 'Post your own requests and offer help on open requests.'}
         </Text>
       )}
@@ -2327,7 +2325,7 @@ export default function CoucouSocial() {
       try {
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
-          .select('id, display_name, role, languages, neighborhood, bio')
+          .select('id, display_name, role, languages, neighborhood, bio, avatar_url')
           .in('role', ['volunteer', 'both'])
           .neq('id', currentUserId)
           .order('display_name');
@@ -2349,6 +2347,7 @@ export default function CoucouSocial() {
             languages: profile.languages.join(' · '),
             interest: profile.role === 'both' ? 'Member & volunteer' : 'Volunteer',
             bio: profile.bio ?? '',
+            avatar_url: profile.avatar_url,
           }));
           const profileNames = new Set(
             discoverProfiles.map((profile) => profile.name.toLowerCase()),
@@ -2684,9 +2683,13 @@ export default function CoucouSocial() {
             {(!detail && tab === 'Me') || author ? (
               <>
                 <View style={s.portrait}>
-                  {!author && currentProfile?.avatar_url ? (
+                  {(author ? author.avatar_url : currentProfile?.avatar_url) ? (
                     <Image
-                      source={{ uri: currentProfile.avatar_url }}
+                      source={{
+                        uri: author
+                          ? author.avatar_url
+                          : currentProfile.avatar_url,
+                      }}
                       style={s.profilePicture}
                       resizeMode="cover"
                     />
