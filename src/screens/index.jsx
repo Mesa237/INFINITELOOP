@@ -68,8 +68,36 @@ const HELP_TYPES = [
   'technology',
   'other',
 ];
-const RULES =
-  'Treat other members with respect, protect their privacy, and report abuse.';
+// Bump RULES_VERSION when the rules change: everyone is asked to agree again.
+const RULES_VERSION = '2026-11';
+const RULES = [
+  ['Be kind and respectful', 'No harassment, hate speech, discrimination or threats. Treat every neighbour the way you want to be treated.'],
+  ['Protect privacy', 'Do not share home addresses, ID, banking or health details in posts or chats. Never share someone else\'s information without their permission.'],
+  ['Meet only in public places', 'Use the Meet button to choose a public place. Tell someone you trust where you are going. You can cancel or leave at any time.'],
+  ['Help is free', 'Never ask for, offer or accept money, gifts or favours in return for help.'],
+  ['Volunteers are not professionals here', 'Help on CouCouMTL is not legal, medical, financial or immigration advice. For official answers, use the Services tab or a licensed professional.'],
+  ['Emergencies', 'In an emergency, call 911. CouCouMTL is not an emergency service.'],
+  ['Report and block', 'Report anyone who breaks these rules. We may remove posts and suspend accounts.'],
+];
+const RULES_DISCLAIMER =
+  'CouCouMTL only connects neighbours. We do not employ, screen or supervise members or volunteers, and we do not guarantee any help, advice or meeting. You take part voluntarily and at your own risk, and you are responsible for your own decisions, safety and belongings. To the extent permitted by law, CouCouMTL and its team are not responsible for any loss, injury or damage arising from help, meetings or content shared through the app.';
+
+function RulesText() {
+  const s = useS();
+  return (
+    <View style={{ gap: 10 }}>
+      {RULES.map(([title, text], index) => (
+        <View key={title} style={{ gap: 2 }}>
+          <Text style={s.bold}>
+            {index + 1}. {title}
+          </Text>
+          <Text style={s.body}>{text}</Text>
+        </View>
+      ))}
+      <Text style={[s.meta, { marginTop: 4 }]}>{RULES_DISCLAIMER}</Text>
+    </View>
+  );
+}
 function Choices({ title, values, labels, value, change }) {
   const s = useS();
   return (
@@ -2083,15 +2111,13 @@ function CommunityBoard({
               : 'Post your own requests and offer help on open requests.'}
         </Text>
       )}
-      <View style={s.card}>
-        <Text style={s.section}>Community rules · v1.0</Text>
-        <Text style={s.body}>{RULES}</Text>
-        <Button
-          label={rulesAccepted ? 'Rules accepted' : 'Agree to rules'}
-          disabled={rulesAccepted}
-          onPress={agree}
-        />
-      </View>
+      {!rulesAccepted && (
+        <View style={s.card}>
+          <Text style={s.section}>Community rules</Text>
+          <RulesText />
+          <Button label="I agree to the rules" onPress={agree} />
+        </View>
+      )}
       {['seeker', 'both'].includes(userRole) && (
         <Button
           label={editing ? 'Cancel request' : 'Post a request'}
@@ -2870,6 +2896,32 @@ export default function CoucouSocial() {
       active = false;
     };
   }, [currentUserId]);
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+    let active = true;
+    (async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('rules_accepted_at, rules_version')
+        .eq('id', currentUserId)
+        .maybeSingle();
+      if (active && data?.rules_accepted_at && data.rules_version === RULES_VERSION) {
+        setRulesAccepted(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [currentUserId]);
+  async function acceptRules() {
+    setRulesAccepted(true);
+    if (!currentUserId) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ rules_accepted_at: new Date().toISOString(), rules_version: RULES_VERSION })
+      .eq('id', currentUserId);
+    if (error) setNotice(getErrorMessage(error, 'Could not save that you agreed to the rules.'));
+  }
   const [bioDraft, setBioDraft] = useState('');
   const [nameDraft, setNameDraft] = useState('');
   const [visitedHelp, setVisitedHelp] = useState(false);
@@ -3050,7 +3102,7 @@ export default function CoucouSocial() {
               go({ kind: 'match-chat', matchId, name })
             }
             rulesAccepted={rulesAccepted}
-            agree={() => setRulesAccepted(true)}
+            agree={acceptRules}
           />
         </View>
       )}
@@ -3400,17 +3452,13 @@ export default function CoucouSocial() {
                 </>
               ) : modal === 'rules' ? (
                 <>
-                  <Text style={s.title}>Community rules · v1.0</Text>
-                  <Text style={s.body}>{RULES}</Text>
+                  <Text style={s.title}>Community rules</Text>
+                  <RulesText />
                   <Button
-                    label={
-                      rulesAccepted
-                        ? 'Rules accepted'
-                        : 'Agree to rules'
-                    }
+                    label={rulesAccepted ? 'You agreed to these rules' : 'I agree to the rules'}
                     disabled={rulesAccepted}
-                    onPress={() => {
-                      setRulesAccepted(true);
+                    onPress={async () => {
+                      await acceptRules();
                       close();
                     }}
                   />
