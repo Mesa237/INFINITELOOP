@@ -2936,6 +2936,21 @@ const useS = makeStyles((C) => ({
     borderRadius: 22,
   },
   active: { backgroundColor: C.primary },
+  badge: {
+    position: 'absolute',
+    top: 2,
+    right: 6,
+    minWidth: 19,
+    height: 19,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    backgroundColor: '#E5312B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: C.card,
+  },
+  badgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900' },
   tabLabel: {
     color: C.text,
     textAlign: 'center',
@@ -3272,6 +3287,42 @@ export default function CoucouSocial() {
       .eq('id', currentUserId);
     if (error) setNotice(getErrorMessage(error, 'Could not save that you agreed to the rules.'));
   }
+  // Unread offers, accepted offers, messages and ratings for the Inbox badge.
+  const [unreadCount, setUnreadCount] = useState(0);
+  const loadUnread = useCallback(async () => {
+    if (!currentUserId) return;
+    const { count, error } = await supabase
+      .from('user_notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('recipient_id', currentUserId)
+      .is('read_at', null);
+    if (!error) setUnreadCount(count ?? 0);
+  }, [currentUserId]);
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+    loadUnread();
+    const channel = supabase
+      .channel('inbox-badge-' + currentUserId)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_notifications',
+          filter: `recipient_id=eq.${currentUserId}`,
+        },
+        () => loadUnread(),
+      )
+      .subscribe();
+    const timer = setInterval(loadUnread, 30000);
+    return () => {
+      clearInterval(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [currentUserId, loadUnread]);
+  useEffect(() => {
+    loadUnread();
+  }, [tab, inboxReloadKey, loadUnread]);
   const [bioDraft, setBioDraft] = useState('');
   const [nameDraft, setNameDraft] = useState('');
   const [visitedHelp, setVisitedHelp] = useState(false);
@@ -3767,6 +3818,14 @@ export default function CoucouSocial() {
               <Text style={[s.tabLabel, t === tab && { color: C.onPrimary }]}>
                 {t}
               </Text>
+              {t === 'Inbox' && unreadCount > 0 && (
+                <View
+                  accessibilityLabel={unreadCount + ' unread'}
+                  style={s.badge}
+                >
+                  <Text style={s.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
             </Pressable>
           ))}
         </View>
