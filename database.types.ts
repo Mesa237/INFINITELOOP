@@ -189,6 +189,7 @@ export type Database = {
           notification_type: string;
           read_at: string | null;
           recipient_id: string;
+          review_id: string | null;
         };
         Insert: {
           actor_id: string;
@@ -200,6 +201,7 @@ export type Database = {
           notification_type?: string;
           read_at?: string | null;
           recipient_id: string;
+          review_id?: string | null;
         };
         Update: {
           actor_id?: string;
@@ -211,6 +213,7 @@ export type Database = {
           notification_type?: string;
           read_at?: string | null;
           recipient_id?: string;
+          review_id?: string | null;
         };
         Relationships: [
           {
@@ -239,6 +242,13 @@ export type Database = {
             columns: ["message_id"];
             isOneToOne: false;
             referencedRelation: "messages";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_notifications_review_id_fkey";
+            columns: ["review_id"];
+            isOneToOne: false;
+            referencedRelation: "reviews";
             referencedColumns: ["id"];
           },
           {

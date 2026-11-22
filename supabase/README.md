@@ -16,7 +16,7 @@ This folder contains the versioned database schema for CouCouMontreal.
 | `profile_preferences` | Optional country-of-origin preference for matching | Private to the profile owner |
 | `help_requests` | Help type, description, preferred language, neighbourhood, schedule, and status | Members see only their own requests; volunteers and people with both roles can browse open requests; match participants can view their request |
 | `matches` | Volunteer offers and their status | Only the requester and volunteer can view a match |
-| `user_notifications` | In-app notifications for help offers | The recipient can read and mark their own notifications as read |
+| `user_notifications` | In-app notifications for help offers, messages, and ratings | The recipient can read and mark their own notifications as read |
 | `reviews` | 1–5 rating and optional written reason | Review text is visible only to reviewer and reviewee; one review per person per completed request |
 | `reports` | Private safety reports about a user or request | Reporter can view their own report; moderation should use a trusted server/admin role |
 | `blocks` | Users blocked by the current user | Private to the person who created the block |
@@ -29,7 +29,7 @@ Users can change their own role from the Me page. The `change_my_role` RPC updat
 
 Members can create requests and receive offers only from volunteers or people with both roles. Volunteers can offer help but cannot create requests. People with both roles can do both. Any owner can delete their own open request, including requests created before a role change. These permissions are enforced by row-level security as well as by the app UI.
 
-Help offer, acceptance, and new chat-message notifications appear in the recipient's Inbox and update in real time while Inbox is open. Accepted offers also enable a persisted chat between the request owner and volunteer; only those match participants can read and send messages.
+Help offer, acceptance, new chat-message, and rating notifications appear in the recipient's Inbox and update in real time while Inbox is open. Rating notifications show the score and any provided reason. Accepted offers enable a persisted chat between the request owner and volunteer; only those match participants can read and send messages. Chats end when an offer is declined or cancelled, its request is deleted, or a participant submits a rating after completion.
 
 Profile pictures are stored in the public `coucou-profile-pictures` bucket. Authenticated users can upload or replace images only inside their own user-ID folder.
 

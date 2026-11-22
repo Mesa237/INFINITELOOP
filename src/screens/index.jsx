@@ -203,9 +203,11 @@ function HelpOfferInbox({
   const s = useS();
   const [notifications, setNotifications] = useState([]);
   const [chats, setChats] = useState([]);
+  const [pendingOfferMatchIds, setPendingOfferMatchIds] = useState(new Set());
   const [names, setNames] = useState({});
   const [requestTitles, setRequestTitles] = useState({});
   const [messageBodies, setMessageBodies] = useState({});
+  const [reviewDetails, setReviewDetails] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
@@ -230,7 +232,7 @@ function HelpOfferInbox({
         const { data, error: notificationError } = await supabase
           .from('user_notifications')
           .select(
-            'id, actor_id, help_request_id, match_id, message_id, notification_type, created_at, read_at',
+            'id, actor_id, help_request_id, match_id, message_id, review_id, notification_type, created_at, read_at',
           )
           .eq('recipient_id', user.id)
           .order('created_at', { ascending: false })
@@ -241,14 +243,17 @@ function HelpOfferInbox({
         const { data: matchRows, error: matchesError } = await supabase
           .from('matches')
           .select('id, help_request_id, volunteer_id, status')
-          .in('status', ['accepted', 'completed'])
+          .in('status', ['pending', 'accepted', 'completed'])
           .order('updated_at', { ascending: false });
         if (matchesError) throw matchesError;
-        const acceptedMatches = matchRows ?? [];
+        const inboxMatches = matchRows ?? [];
+        const conversationMatches = inboxMatches.filter(
+          (match) => match.status === 'accepted' || match.status === 'completed',
+        );
         const requestIds = [
           ...new Set([
             ...rows.map((item) => item.help_request_id),
-            ...acceptedMatches.map((match) => match.help_request_id),
+            ...inboxMatches.map((match) => match.help_request_id),
           ]),
         ];
         let profileRows = [];
@@ -264,7 +269,7 @@ function HelpOfferInbox({
         const profileIds = [
           ...new Set([
             ...rows.map((item) => item.actor_id),
-            ...acceptedMatches.map((match) => match.volunteer_id),
+            ...inboxMatches.map((match) => match.volunteer_id),
             ...requestRows.map((request) => request.requester_id),
           ]),
         ];
@@ -288,13 +293,37 @@ function HelpOfferInbox({
           if (messagesError) throw messagesError;
           messageRows = messages ?? [];
         }
+        let reviewRows = [];
+        if (requestIds.length) {
+          const { data: reviews, error: reviewsError } = await supabase
+            .from('reviews')
+            .select('id, help_request_id, reviewer_id, rating, reason')
+            .in('help_request_id', requestIds);
+          if (reviewsError) throw reviewsError;
+          reviewRows = reviews ?? [];
+        }
+        const reviewsById = Object.fromEntries(
+          reviewRows.map((review) => [review.id, review]),
+        );
+        const reviewsByRequest = reviewRows.reduce((groups, review) => {
+          groups[review.help_request_id] ??= [];
+          groups[review.help_request_id].push(review);
+          return groups;
+        }, {});
         const requestById = Object.fromEntries(
           requestRows.map((request) => [request.id, request]),
         );
         const profileById = Object.fromEntries(
           profileRows.map((profile) => [profile.id, profile]),
         );
-        const activeChats = acceptedMatches
+        const activeChats = conversationMatches
+          .filter(
+            (match) =>
+              match.status !== 'completed' ||
+              !(reviewsByRequest[match.help_request_id] ?? []).some(
+                (review) => review.reviewer_id === user.id,
+              ),
+          )
           .map((match) => {
             const request = requestById[match.help_request_id];
             if (!request) return null;
@@ -303,7 +332,9 @@ function HelpOfferInbox({
                 ? request.requester_id
                 : match.volunteer_id;
             const chatNotifications = rows.filter(
-              (notification) => notification.match_id === match.id,
+              (notification) =>
+                notification.match_id === match.id &&
+                notification.notification_type !== 'review',
             );
             const latestNotification = chatNotifications[0];
             return {
@@ -320,6 +351,13 @@ function HelpOfferInbox({
         if (active) {
           setNotifications(rows);
           setChats(activeChats);
+          setPendingOfferMatchIds(
+            new Set(
+              inboxMatches
+                .filter((match) => match.status === 'pending')
+                .map((match) => match.id),
+            ),
+          );
           setNames(
             Object.fromEntries(
               profileRows.map((profile) => [profile.id, profile.display_name]),
@@ -331,6 +369,7 @@ function HelpOfferInbox({
           setMessageBodies(
             Object.fromEntries(messageRows.map((message) => [message.id, message.body])),
           );
+          setReviewDetails(reviewsById);
         }
 
         if (active) {
@@ -343,6 +382,15 @@ function HelpOfferInbox({
                 schema: 'public',
                 table: 'user_notifications',
                 filter: `recipient_id=eq.${user.id}`,
+              },
+              onRefresh,
+            )
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'matches',
               },
               onRefresh,
             )
@@ -403,7 +451,9 @@ function HelpOfferInbox({
     const unreadIds = notifications
       .filter(
         (notification) =>
-          notification.match_id === chat.matchId && !notification.read_at,
+          notification.match_id === chat.matchId &&
+          notification.notification_type !== 'review' &&
+          !notification.read_at,
       )
       .map((notification) => notification.id);
 
@@ -445,8 +495,16 @@ function HelpOfferInbox({
           {error}
         </Text>
       )}
-      {!loading && !notifications.length && !chats.length && !error && (
-        <Text style={s.body}>No notifications or accepted help conversations yet.</Text>
+      {!loading &&
+        !chats.length &&
+        !notifications.some(
+          (notification) =>
+            notification.notification_type === 'review' ||
+            (notification.notification_type === 'offer' &&
+              pendingOfferMatchIds.has(notification.match_id)),
+        ) &&
+        !error && (
+        <Text style={s.body}>No notifications or active help conversations yet.</Text>
       )}
       {chats.length > 0 && (
         chats.map((chat) => (
@@ -461,8 +519,8 @@ function HelpOfferInbox({
                 {chat.latestNotification.notification_type === 'message'
                   ? `${names[chat.latestNotification.actor_id] || 'Neighbour'}: ${messageBodies[chat.latestNotification.message_id] || 'New message'}`
                   : chat.latestNotification.notification_type === 'accepted'
-                    ? 'Your help offer was accepted.'
-                    : 'Help offer update'}
+                      ? 'Your help offer was accepted.'
+                      : 'Help offer update'}
                 {chat.unreadCount > 0 ? ` · ${chat.unreadCount} new` : ''}
               </Text>
             )}
@@ -489,7 +547,7 @@ function HelpOfferInbox({
         .filter(
           (notification) =>
             notification.notification_type === 'offer' &&
-            !chats.some((chat) => chat.matchId === notification.match_id),
+            pendingOfferMatchIds.has(notification.match_id),
         )
         .map((notification) => (
           <View
@@ -520,6 +578,42 @@ function HelpOfferInbox({
             }
           </View>
         ))}
+      {notifications
+        .filter(
+          (notification) => notification.notification_type === 'review',
+        )
+        .map((notification) => {
+          const review = reviewDetails[notification.review_id];
+          return (
+            <View
+              key={notification.id}
+              style={[s.card, { backgroundColor: C.page }]}
+            >
+              <Text style={s.body}>
+                {names[notification.actor_id] || 'Your neighbour'} rated you{' '}
+                {review?.rating ?? ''}/5.
+                {review?.reason ? ` Reason: ${review.reason}` : ''}
+              </Text>
+              <Text style={s.meta}>
+                {new Date(notification.created_at).toLocaleString()}
+                {notification.read_at ? ' · Read' : ' · New'}
+              </Text>
+              <Button
+                soft
+                label="View request"
+                onPress={() => onOpenRequest(notification.help_request_id)}
+              />
+              {!notification.read_at && (
+                <Button
+                  soft
+                  label={busyId === notification.id ? 'Saving…' : 'Mark as read'}
+                  disabled={Boolean(busyId)}
+                  onPress={() => markAsRead(notification)}
+                />
+              )}
+            </View>
+          );
+        })}
     </View>
   );
 }
@@ -838,7 +932,7 @@ function chatTime(value) {
     : date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · ' + time;
 }
 
-function MatchConversation({ matchId, partnerName }) {
+function MatchConversation({ matchId, partnerName, onBack }) {
   const { C } = useCoucouTheme();
   const s = useS();
   const social = useSocial();
@@ -848,6 +942,7 @@ function MatchConversation({ matchId, partnerName }) {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
+  const [conversationEnded, setConversationEnded] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const scrollRef = useRef(null);
@@ -972,6 +1067,40 @@ function MatchConversation({ matchId, partnerName }) {
         if (userError) throw userError;
         if (!user) throw new Error('Please sign in to view this conversation.');
 
+        const { data: match, error: matchError } = await supabase
+          .from('matches')
+          .select('status, help_request_id')
+          .eq('id', matchId)
+          .maybeSingle();
+        if (matchError) throw matchError;
+        if (
+          !match ||
+          !['accepted', 'completed'].includes(match.status)
+        ) {
+          if (active) {
+            setUserId(user.id);
+            setConversationEnded(true);
+          }
+          return;
+        }
+
+        if (match.status === 'completed') {
+          const { data: ownReview, error: reviewError } = await supabase
+            .from('reviews')
+            .select('id')
+            .eq('help_request_id', match.help_request_id)
+            .eq('reviewer_id', user.id)
+            .maybeSingle();
+          if (reviewError) throw reviewError;
+          if (ownReview) {
+            if (active) {
+              setUserId(user.id);
+              setConversationEnded(true);
+            }
+            return;
+          }
+        }
+
         const { data, error: messagesError } = await supabase
           .from('messages')
           .select('id, sender_id, body, created_at')
@@ -981,6 +1110,7 @@ function MatchConversation({ matchId, partnerName }) {
 
         if (active) {
           setUserId(user.id);
+          setConversationEnded(false);
           setMessages(data ?? []);
           channel = supabase
             .channel(`match-messages-${matchId}`)
@@ -991,6 +1121,26 @@ function MatchConversation({ matchId, partnerName }) {
                 schema: 'public',
                 table: 'messages',
                 filter: `match_id=eq.${matchId}`,
+              },
+              () => setReloadKey((key) => key + 1),
+            )
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'matches',
+                filter: `id=eq.${matchId}`,
+              },
+              () => setReloadKey((key) => key + 1),
+            )
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'reviews',
+                filter: `reviewer_id=eq.${user.id}`,
               },
               () => setReloadKey((key) => key + 1),
             )
@@ -1043,6 +1193,19 @@ function MatchConversation({ matchId, partnerName }) {
     } finally {
       setSending(false);
     }
+  }
+
+  if (!loading && conversationEnded) {
+    return (
+      <View style={s.content}>
+        <Text style={s.title}>Conversation ended</Text>
+        <Text style={s.body}>
+          This conversation is closed because the offer was declined, the
+          request was removed, or you submitted your rating.
+        </Text>
+        <Button label="Back" onPress={onBack} />
+      </View>
+    );
   }
 
   return (
@@ -1859,18 +2022,22 @@ function CommunityBoard({
                   <Text style={s.bold}>
                     Volunteer: {requesterNames[acceptedMatch.volunteer_id] || 'Neighbour'}
                   </Text>
-                  <Button
-                    soft
-                    label="Open conversation"
-                    onPress={() =>
-                      openMatchChat(
-                        acceptedMatch.id,
-                        request.requester_id === userId
-                          ? requesterNames[acceptedMatch.volunteer_id] || 'Volunteer'
-                          : requesterNames[request.requester_id] || 'Neighbour',
-                      )
-                    }
-                  />
+                  {acceptedMatch.status !== 'completed' || !myReview ? (
+                    <Button
+                      soft
+                      label="Open conversation"
+                      onPress={() =>
+                        openMatchChat(
+                          acceptedMatch.id,
+                          request.requester_id === userId
+                            ? requesterNames[acceptedMatch.volunteer_id] || 'Volunteer'
+                            : requesterNames[request.requester_id] || 'Neighbour',
+                        )
+                      }
+                    />
+                  ) : (
+                    <Text style={s.meta}>Conversation ended after your rating.</Text>
+                  )}
                   {acceptedMatch.status === 'accepted' && isParticipant && (
                     <>
                       <Text style={s.meta}>Help is matched. Mark it complete when you are both done.</Text>
@@ -2623,6 +2790,7 @@ export default function CoucouSocial() {
         <MatchConversation
           matchId={detail.matchId}
           partnerName={detail.name}
+          onBack={back}
         />
       ) : activeChat ? (
         <KeyboardAvoidingView
