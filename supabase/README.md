@@ -29,7 +29,7 @@ Users can change their own role from the Me page. The `change_my_role` RPC updat
 
 Members can create requests and receive offers only from volunteers or people with both roles. Volunteers can offer help but cannot create requests. People with both roles can do both. Any owner can delete their own open request, including requests created before a role change. These permissions are enforced by row-level security as well as by the app UI.
 
-When a volunteer offers help, the database creates an in-app notification for the request owner. Notifications appear in the recipient's Inbox and update in real time while Inbox is open.
+Help offer, acceptance, and new chat-message notifications appear in the recipient's Inbox and update in real time while Inbox is open. Accepted offers also enable a persisted chat between the request owner and volunteer; only those match participants can read and send messages.
 
 Profile pictures are stored in the public `coucou-profile-pictures` bucket. Authenticated users can upload or replace images only inside their own user-ID folder.
 

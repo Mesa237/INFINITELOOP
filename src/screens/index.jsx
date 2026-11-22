@@ -192,12 +192,14 @@ function Communities() {
     </View>
   );
 }
-function HelpOfferInbox({ isActive }) {
+function HelpOfferInbox({ isActive, onOpenChat, onOpenRequest }) {
   const { C } = useCoucouTheme();
   const s = useS();
   const [notifications, setNotifications] = useState([]);
+  const [chats, setChats] = useState([]);
   const [names, setNames] = useState({});
   const [requestTitles, setRequestTitles] = useState({});
+  const [messageBodies, setMessageBodies] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
@@ -222,36 +224,97 @@ function HelpOfferInbox({ isActive }) {
 
         const { data, error: notificationError } = await supabase
           .from('user_notifications')
-          .select('id, actor_id, help_request_id, created_at, read_at')
+          .select(
+            'id, actor_id, help_request_id, match_id, message_id, notification_type, created_at, read_at',
+          )
           .eq('recipient_id', user.id)
           .order('created_at', { ascending: false })
           .limit(50);
         if (notificationError) throw notificationError;
         const rows = data ?? [];
 
-        const actorIds = [...new Set(rows.map((item) => item.actor_id))];
-        const requestIds = [...new Set(rows.map((item) => item.help_request_id))];
+        const { data: matchRows, error: matchesError } = await supabase
+          .from('matches')
+          .select('id, help_request_id, volunteer_id, status')
+          .in('status', ['accepted', 'completed'])
+          .order('updated_at', { ascending: false });
+        if (matchesError) throw matchesError;
+        const acceptedMatches = matchRows ?? [];
+        const requestIds = [
+          ...new Set([
+            ...rows.map((item) => item.help_request_id),
+            ...acceptedMatches.map((match) => match.help_request_id),
+          ]),
+        ];
         let profileRows = [];
         let requestRows = [];
-        if (actorIds.length) {
-          const { data: profiles, error: profilesError } = await supabase
-            .from('profiles')
-            .select('id, display_name')
-            .in('id', actorIds);
-          if (profilesError) throw profilesError;
-          profileRows = profiles ?? [];
-        }
         if (requestIds.length) {
           const { data: requests, error: requestsError } = await supabase
             .from('help_requests')
-            .select('id, title')
+            .select('id, title, requester_id')
             .in('id', requestIds);
           if (requestsError) throw requestsError;
           requestRows = requests ?? [];
         }
+        const profileIds = [
+          ...new Set([
+            ...rows.map((item) => item.actor_id),
+            ...acceptedMatches.map((match) => match.volunteer_id),
+            ...requestRows.map((request) => request.requester_id),
+          ]),
+        ];
+        if (profileIds.length) {
+          const { data: profiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, display_name')
+            .in('id', profileIds);
+          if (profilesError) throw profilesError;
+          profileRows = profiles ?? [];
+        }
+        const messageIds = rows
+          .map((item) => item.message_id)
+          .filter(Boolean);
+        let messageRows = [];
+        if (messageIds.length) {
+          const { data: messages, error: messagesError } = await supabase
+            .from('messages')
+            .select('id, body')
+            .in('id', messageIds);
+          if (messagesError) throw messagesError;
+          messageRows = messages ?? [];
+        }
+        const requestById = Object.fromEntries(
+          requestRows.map((request) => [request.id, request]),
+        );
+        const profileById = Object.fromEntries(
+          profileRows.map((profile) => [profile.id, profile]),
+        );
+        const activeChats = acceptedMatches
+          .map((match) => {
+            const request = requestById[match.help_request_id];
+            if (!request) return null;
+            const partnerId =
+              match.volunteer_id === user.id
+                ? request.requester_id
+                : match.volunteer_id;
+            const chatNotifications = rows.filter(
+              (notification) => notification.match_id === match.id,
+            );
+            const latestNotification = chatNotifications[0];
+            return {
+              matchId: match.id,
+              requestId: request.id,
+              partnerName: profileById[partnerId]?.display_name || 'Neighbour',
+              requestTitle: request.title,
+              latestNotification,
+              unreadCount: chatNotifications.filter((item) => !item.read_at).length,
+            };
+          })
+          .filter(Boolean);
 
         if (active) {
           setNotifications(rows);
+          setChats(activeChats);
           setNames(
             Object.fromEntries(
               profileRows.map((profile) => [profile.id, profile.display_name]),
@@ -259,6 +322,9 @@ function HelpOfferInbox({ isActive }) {
           );
           setRequestTitles(
             Object.fromEntries(requestRows.map((request) => [request.id, request.title])),
+          );
+          setMessageBodies(
+            Object.fromEntries(messageRows.map((message) => [message.id, message.body])),
           );
         }
 
@@ -328,41 +394,132 @@ function HelpOfferInbox({ isActive }) {
     }
   }
 
+  async function openConversation(chat) {
+    const unreadIds = notifications
+      .filter(
+        (notification) =>
+          notification.match_id === chat.matchId && !notification.read_at,
+      )
+      .map((notification) => notification.id);
+
+    if (unreadIds.length && !busyId) {
+      setBusyId(chat.matchId);
+      setError('');
+      try {
+        const readAt = new Date().toISOString();
+        const { data, error: updateError } = await supabase
+          .from('user_notifications')
+          .update({ read_at: readAt })
+          .in('id', unreadIds)
+          .select('id');
+        if (updateError) throw updateError;
+        const readIds = new Set((data ?? []).map((item) => item.id));
+        setNotifications((previous) =>
+          previous.map((item) =>
+            readIds.has(item.id) ? { ...item, read_at: readAt } : item,
+          ),
+        );
+      } catch (updateError) {
+        setError(
+          getErrorMessage(updateError, 'Could not update conversation notifications.'),
+        );
+      } finally {
+        setBusyId('');
+      }
+    }
+
+    onOpenChat(chat.matchId, chat.partnerName);
+  }
+
   return (
     <View style={s.card}>
-      <Text style={s.section}>Help offer notifications</Text>
+      <Text style={s.section}>Inbox</Text>
       {loading && <Text style={s.meta}>Loading notifications…</Text>}
       {!!error && (
         <Text accessibilityLiveRegion="polite" style={{ color: C.error }}>
           {error}
         </Text>
       )}
-      {!loading && !notifications.length && !error && (
-        <Text style={s.body}>No help offer notifications yet.</Text>
+      {!loading && !notifications.length && !chats.length && !error && (
+        <Text style={s.body}>No notifications or accepted help conversations yet.</Text>
       )}
-      {notifications.map((notification) => (
-        <View
-          key={notification.id}
-          style={[s.card, { backgroundColor: C.page }]}
-        >
-          <Text style={s.body}>
-            {names[notification.actor_id] || 'A volunteer'} offered to help with{' '}
-            “{requestTitles[notification.help_request_id] || 'your request'}”.
-          </Text>
-          <Text style={s.meta}>
-            {new Date(notification.created_at).toLocaleString()}
-            {notification.read_at ? ' · Read' : ' · New'}
-          </Text>
-          {!notification.read_at && (
+      <Button
+        soft
+        label="Community help requests"
+        onPress={() => onOpenRequest()}
+      />
+      {chats.length > 0 && (
+        chats.map((chat) => (
+          <View
+            key={chat.matchId}
+            style={[s.card, { backgroundColor: C.page }]}
+          >
+            <Text style={s.bold}>{chat.partnerName}</Text>
+            <Text style={s.body}>{chat.requestTitle}</Text>
+            {chat.latestNotification && (
+              <Text numberOfLines={2} style={s.meta}>
+                {chat.latestNotification.notification_type === 'message'
+                  ? `${names[chat.latestNotification.actor_id] || 'Neighbour'}: ${messageBodies[chat.latestNotification.message_id] || 'New message'}`
+                  : chat.latestNotification.notification_type === 'accepted'
+                    ? 'Your help offer was accepted.'
+                    : 'Help offer update'}
+                {chat.unreadCount > 0 ? ` · ${chat.unreadCount} new` : ''}
+              </Text>
+            )}
             <Button
               soft
-              label={busyId === notification.id ? 'Saving…' : 'Mark as read'}
-              disabled={Boolean(busyId)}
-              onPress={() => markAsRead(notification)}
+              label="View request"
+              onPress={() => onOpenRequest(chat.requestId)}
             />
-          )}
-        </View>
-      ))}
+            <Button
+              label={
+                busyId === chat.matchId
+                  ? 'Opening…'
+                  : chat.unreadCount > 0
+                    ? 'Open conversation'
+                    : 'Continue conversation'
+              }
+              disabled={Boolean(busyId)}
+              onPress={() => openConversation(chat)}
+            />
+          </View>
+        ))
+      )}
+      {notifications
+        .filter(
+          (notification) =>
+            notification.notification_type === 'offer' &&
+            !chats.some((chat) => chat.matchId === notification.match_id),
+        )
+        .map((notification) => (
+          <View
+            key={notification.id}
+            style={[s.card, { backgroundColor: C.page }]}
+          >
+            <Text style={s.body}>
+              {names[notification.actor_id] || 'A volunteer'} offered to help with “
+              {requestTitles[notification.help_request_id] || 'your request'}”.
+            </Text>
+            <Text style={s.meta}>
+              {new Date(notification.created_at).toLocaleString()}
+              {notification.read_at ? ' · Read' : ' · New'}
+            </Text>
+            <Button
+              soft
+              label="View request"
+              onPress={() => onOpenRequest(notification.help_request_id)}
+            />
+            {!notification.read_at && (
+              <Button
+                soft
+                label={busyId === notification.id ? 'Saving…' : 'Mark as read'}
+                disabled={Boolean(busyId)}
+                onPress={() => markAsRead(notification)}
+              />
+            )
+            }
+          </View>
+        ))}
       {!loading && (
         <Button
           soft
@@ -373,11 +530,176 @@ function HelpOfferInbox({ isActive }) {
     </View>
   );
 }
+function MatchConversation({ matchId, partnerName }) {
+  const { C } = useCoucouTheme();
+  const s = useS();
+  const [userId, setUserId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [draft, setDraft] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const scrollRef = useRef(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    let channel;
+
+    async function loadMessages() {
+      setLoading(true);
+      setError('');
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) throw new Error('Please sign in to view this conversation.');
+
+        const { data, error: messagesError } = await supabase
+          .from('messages')
+          .select('id, sender_id, body, created_at')
+          .eq('match_id', matchId)
+          .order('created_at', { ascending: true });
+        if (messagesError) throw messagesError;
+
+        if (active) {
+          setUserId(user.id);
+          setMessages(data ?? []);
+          channel = supabase
+            .channel(`match-messages-${matchId}`)
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'messages',
+                filter: `match_id=eq.${matchId}`,
+              },
+              () => setReloadKey((key) => key + 1),
+            )
+            .subscribe((status, subscriptionError) => {
+              if (
+                active &&
+                (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')
+              ) {
+                setError(
+                  subscriptionError?.message ||
+                    'Live messages are unavailable. Refresh to check again.',
+                );
+              }
+            });
+        }
+      } catch (loadError) {
+        if (active) {
+          setError(getErrorMessage(loadError, 'Could not load this conversation.'));
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadMessages();
+    return () => {
+      active = false;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [matchId, reloadKey]);
+
+  async function sendMessage() {
+    const body = draft.trim();
+    if (!userId || !body || sending) return;
+    setSending(true);
+    setError('');
+    try {
+      const { data, error: sendError } = await supabase
+        .from('messages')
+        .insert({ match_id: matchId, sender_id: userId, body })
+        .select('id, sender_id, body, created_at')
+        .single();
+      if (sendError) throw sendError;
+      setMessages((previous) =>
+        previous.some((item) => item.id === data.id) ? previous : [...previous, data],
+      );
+      setDraft('');
+    } catch (sendError) {
+      setError(getErrorMessage(sendError, 'Could not send your message.'));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={s.card}>
+        <Text style={s.title}>{partnerName}</Text>
+        {loading && <Text style={s.meta}>Loading conversation…</Text>}
+        {!!error && (
+          <Text accessibilityLiveRegion="polite" style={{ color: C.error }}>
+            {error}
+          </Text>
+        )}
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={s.content}
+          onContentSizeChange={() =>
+            scrollRef.current?.scrollToEnd({ animated: true })
+          }
+        >
+          {!loading && messages.length === 0 && (
+            <Text style={s.body}>No messages yet. Send a message to get started.</Text>
+          )}
+          {messages.map((message) => (
+            <View
+              key={message.id}
+              style={[
+                s.card,
+                {
+                  alignSelf: message.sender_id === userId ? 'flex-end' : 'flex-start',
+                  maxWidth: '90%',
+                  backgroundColor:
+                    message.sender_id === userId ? C.softBg : C.card,
+                },
+              ]}
+            >
+              <Text style={s.body}>{message.body}</Text>
+              <Text style={s.meta}>
+                {new Date(message.created_at).toLocaleString()}
+              </Text>
+            </View>
+          ))}
+        </ScrollView>
+        <View style={s.row}>
+          <TextInput
+            accessibilityLabel="Write a message"
+            style={[s.input, { flex: 1 }]}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Write a message…"
+            placeholderTextColor={C.placeholder}
+            maxLength={2000}
+          />
+          <Button
+            label={sending ? 'Sending…' : 'Send'}
+            disabled={!draft.trim() || sending || !userId}
+            onPress={sendMessage}
+          />
+        </View>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
 function CommunityBoard({
   isActive,
   area,
   displayName,
   role,
+  requestId,
+  openMatchChat,
   rulesAccepted,
   agree,
 }) {
@@ -448,8 +770,11 @@ function CommunityBoard({
           );
         if (profile.role === 'seeker') {
           requestQuery = requestQuery.eq('requester_id', user.id);
-        } else if (profile.role === 'volunteer') {
+        } else if (profile.role === 'volunteer' && !requestId) {
           requestQuery = requestQuery.eq('status', 'open');
+        }
+        if (requestId) {
+          requestQuery = requestQuery.eq('id', requestId);
         }
         const { data: rows, error: requestError } = await requestQuery.order(
           'created_at',
@@ -543,7 +868,7 @@ function CommunityBoard({
     return () => {
       isMounted = false;
     };
-  }, [isActive, reloadKey, role]);
+  }, [isActive, reloadKey, requestId, role]);
 
   async function writeDraft() {
     const text = aiText.trim();
@@ -1001,13 +1326,23 @@ function CommunityBoard({
               {['volunteer', 'both'].includes(userRole) &&
                 request.requester_id !== userId &&
                 request.status === 'open' &&
-                !myOffer &&
-                rulesAccepted && (
-                  <Button
-                    label={busyAction === request.id + ':offer' ? 'Sending offer…' : 'Offer to help'}
-                    disabled={Boolean(busyAction)}
-                    onPress={() => offerToHelp(request.id)}
-                  />
+                !myOffer && (
+                  <>
+                    {!rulesAccepted && (
+                      <Text style={s.meta}>
+                        Agree to the community rules above to offer help.
+                      </Text>
+                    )}
+                    <Button
+                      label={
+                        busyAction === request.id + ':offer'
+                          ? 'Sending offer…'
+                          : 'Offer to help'
+                      }
+                      disabled={Boolean(busyAction) || !rulesAccepted}
+                      onPress={() => offerToHelp(request.id)}
+                    />
+                  </>
                 )}
 
               {myOffer?.status === 'pending' &&
@@ -1065,6 +1400,18 @@ function CommunityBoard({
                   <Text style={s.bold}>
                     Volunteer: {requesterNames[acceptedMatch.volunteer_id] || 'Neighbour'}
                   </Text>
+                  <Button
+                    soft
+                    label="Open conversation"
+                    onPress={() =>
+                      openMatchChat(
+                        acceptedMatch.id,
+                        request.requester_id === userId
+                          ? requesterNames[acceptedMatch.volunteer_id] || 'Volunteer'
+                          : requesterNames[request.requester_id] || 'Neighbour',
+                      )
+                    }
+                  />
                   {acceptedMatch.status === 'accepted' && isParticipant && (
                     <>
                       <Text style={s.meta}>Help is matched. Mark it complete when you are both done.</Text>
@@ -1648,10 +1995,13 @@ export default function CoucouSocial() {
     detail?.kind === 'profile'
       ? people.find((p) => p.name === detail.name)
       : undefined;
-  const activeChat = detail?.kind === 'chat' ? detail.name : null;
-  const openHelp = () => {
+  const activeChat =
+    detail?.kind === 'chat' || detail?.kind === 'match-chat'
+      ? detail.name
+      : null;
+  const openHelp = (requestId) => {
     setVisitedHelp(true);
-    go({ kind: 'help' });
+    go({ kind: 'help', requestId });
   };
   function postCard(p) {
     const liked = likes.includes(p.id);
@@ -1733,12 +2083,21 @@ export default function CoucouSocial() {
             area={area}
             displayName={currentProfile?.display_name}
             role={currentProfile?.role}
+            requestId={detail?.requestId}
+            openMatchChat={(matchId, name) =>
+              go({ kind: 'match-chat', matchId, name })
+            }
             rulesAccepted={rulesAccepted}
             agree={() => setRulesAccepted(true)}
           />
         </View>
       )}
-      {activeChat ? (
+      {detail?.kind === 'match-chat' ? (
+        <MatchConversation
+          matchId={detail.matchId}
+          partnerName={detail.name}
+        />
+      ) : activeChat ? (
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -1988,7 +2347,13 @@ export default function CoucouSocial() {
             ) : (
               <>
                 <Text style={s.title}>Inbox</Text>
-                <HelpOfferInbox isActive={!detail && tab === 'Inbox'} />
+                <HelpOfferInbox
+                  isActive={!detail && tab === 'Inbox'}
+                  onOpenChat={(matchId, name) =>
+                    go({ kind: 'match-chat', matchId, name })
+                  }
+                  onOpenRequest={(requestId) => openHelp(requestId)}
+                />
                 {Object.entries(threads)
                   .filter(([name]) => !blocked.includes(name))
                   .sort(

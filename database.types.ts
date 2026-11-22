@@ -139,6 +139,45 @@ export type Database = {
           },
         ];
       };
+      messages: {
+        Row: {
+          body: string;
+          created_at: string;
+          id: string;
+          match_id: string;
+          sender_id: string;
+        };
+        Insert: {
+          body: string;
+          created_at?: string;
+          id?: string;
+          match_id: string;
+          sender_id: string;
+        };
+        Update: {
+          body?: string;
+          created_at?: string;
+          id?: string;
+          match_id?: string;
+          sender_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "messages_match_id_fkey";
+            columns: ["match_id"];
+            isOneToOne: false;
+            referencedRelation: "matches";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "messages_sender_id_fkey";
+            columns: ["sender_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       user_notifications: {
         Row: {
           actor_id: string;
@@ -146,6 +185,8 @@ export type Database = {
           help_request_id: string;
           id: string;
           match_id: string;
+          message_id: string | null;
+          notification_type: string;
           read_at: string | null;
           recipient_id: string;
         };
@@ -155,6 +196,8 @@ export type Database = {
           help_request_id: string;
           id?: string;
           match_id: string;
+          message_id?: string | null;
+          notification_type?: string;
           read_at?: string | null;
           recipient_id: string;
         };
@@ -164,6 +207,8 @@ export type Database = {
           help_request_id?: string;
           id?: string;
           match_id?: string;
+          message_id?: string | null;
+          notification_type?: string;
           read_at?: string | null;
           recipient_id?: string;
         };
@@ -185,8 +230,15 @@ export type Database = {
           {
             foreignKeyName: "user_notifications_match_id_fkey";
             columns: ["match_id"];
-            isOneToOne: true;
+            isOneToOne: false;
             referencedRelation: "matches";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_notifications_message_id_fkey";
+            columns: ["message_id"];
+            isOneToOne: false;
+            referencedRelation: "messages";
             referencedColumns: ["id"];
           },
           {
