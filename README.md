@@ -1,56 +1,64 @@
-# Welcome to your Expo app 👋
+# CouCouMTL
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**Ask. Get help. Say coucou.**
+A neighbour-to-neighbour help app for Montréal that connects **elders and newcomers** with **volunteers**: in any language, matched by skills, meeting safely in public places.
 
-## Get started
+Built by **Team InfiniteLoop** for the Montréal hackathon (theme: build something for the community and the city).
 
-1. Install dependencies
+- Showcase site: https://coucoumtl.vercel.app
+- Pitch deck: in the hackathon OneDrive folder
 
-   ```bash
-   npm install
-   ```
+---
 
-2. Start the app
+## The problem
+In Montréal, **36% of seniors live alone** (vs 29% in Quebec and 27% in Toronto), and **31.6% of them live below the low-income line**. About **1 resident in 3 is an immigrant**. Many neighbours would gladly help, but people can't find each other.
 
-   ```bash
-   npx expo start
-   ```
+## What the app does
+| Feature | What it does |
+|---|---|
+| **AI post writer** | Members describe their need in any language. Claude writes a clear post in French or English, removes private details, and flags only real emergencies as urgent. |
+| **Skills-first matching** | Volunteers see requests that need their skills first. Members see which volunteers have the skills they need. Niche skills written in the volunteer's own words are matched against request text. |
+| **Volunteer dashboard** | Skills, kinds of help, languages, profession, talents, availability, each with an "Other" option. |
+| **Offers, chat and notifications** | Offer, accept, live chat, and an Inbox with an unread badge. |
+| **Meet safely** | Fair midpoint: public places (metro stations, Grande Bibliothèque) at a fair distance for both people, computed from live locations rounded to about 100 m. "Near me" suggests public places only. No home address is ever shared. |
+| **Trust and safety** | Ratings (a reason is required under 4 stars), Verified volunteer badge (3+ reviews averaging 4+ stars), block and report, community rules with a liability disclaimer. |
+| **Community** | Discover posts with photos, videos and comments. Volunteer-run clubs (e.g. French A1 Tandem, Winter in MTL) with club chat and in-app live voice rooms (host, speakers, listeners, raise hand). |
+| **Accessibility** | Easy view (bigger text and buttons), English / Français, light / dark mode. |
+| **Services** | Verified phone numbers and links for key public services. |
 
-In the output, you'll find options to open the app in a
+## Tech stack
+- **Mobile app:** Expo SDK 58, React Native, Expo Router
+- **Backend:** Supabase (Postgres with row-level security on every table, Realtime, Storage, Edge Functions)
+- **AI:** Anthropic Claude via a Supabase Edge Function (`supabase/functions/draft-request`)
+- **Live rooms:** WebRTC audio with Supabase Realtime signalling (`website/live.html`, shown in-app)
+- **Website:** static site on Vercel (`website/`)
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+## Project structure
+```
+src/app/            Expo Router entry
+src/screens/        App screens (index.jsx, community.jsx, auth.jsx, public-services.jsx)
+src/theme/          Colours, dark mode, Easy view, language
+lib/                Supabase client and storage
+supabase/migrations Database schema, security rules and functions (run in order)
+supabase/functions  Edge Function for the AI post writer
+website/            Showcase site and live room page
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+## Run it locally
+1. `npm install`
+2. Create `.env` with:
+   ```
+   EXPO_PUBLIC_SUPABASE_URL=...
+   EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
+   ```
+   (Never commit `.env` or any secret key.)
+3. Apply `supabase/migrations/*.sql` in order to your Supabase project.
+4. `npx expo start --tunnel` and scan the QR code with Expo Go.
 
-### Other setup steps
+## Business model
+- **Members:** free.
+- **Organisations** (universities, settlement services, residences): pay for a dashboard and to reach volunteers.
+- **Volunteers:** earn verified volunteer hours.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Team
+InfiniteLoop: 4 students, Montréal.
