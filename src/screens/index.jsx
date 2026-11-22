@@ -1716,13 +1716,14 @@ const HELP_TYPE_LABELS = {
   companionship: 'Companionship',
   language_practice: 'Language practice',
   technology: 'Technology',
-  other: 'Anything else',
+  other: 'Other',
 };
 const LANGUAGE_OPTIONS = [
   ['en', 'English'], ['fr', 'French'], ['es', 'Spanish'], ['ar', 'Arabic'],
   ['zh', 'Chinese'], ['fa', 'Persian'], ['uk', 'Ukrainian'], ['ru', 'Russian'],
   ['pt', 'Portuguese'], ['it', 'Italian'], ['tr', 'Turkish'], ['hi', 'Hindi'],
   ['ta', 'Tamil'], ['vi', 'Vietnamese'], ['ko', 'Korean'], ['he', 'Hebrew'],
+  ['other', 'Other'],
 ];
 
 function MultiChoice({ title, hint, options, values, change, max }) {
@@ -1762,6 +1763,8 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
   const [languages, setLanguages] = useState(initialLanguages ?? []);
   const [talents, setTalents] = useState('');
   const [otherSkills, setOtherSkills] = useState('');
+  const [otherHelp, setOtherHelp] = useState('');
+  const [otherLanguages, setOtherLanguages] = useState('');
   const [experience, setExperience] = useState('');
   const [availability, setAvailability] = useState('');
   const [matches, setMatches] = useState(null);
@@ -1776,7 +1779,7 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
     (async () => {
       const { data } = await supabase
         .from('volunteer_details')
-        .select('skills, profession, experience, availability, help_types, talents, other_skills')
+        .select('skills, profession, experience, availability, help_types, talents, other_skills, other_help, other_languages')
         .eq('user_id', userId)
         .maybeSingle();
       if (!active) return;
@@ -1788,6 +1791,11 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
         setHelpTypes(data.help_types ?? []);
         setTalents(data.talents ?? '');
         setOtherSkills(data.other_skills ?? '');
+        setOtherHelp(data.other_help ?? '');
+        setOtherLanguages(data.other_languages ?? '');
+        if (data.other_languages) {
+          setLanguages((current) => (current.includes('other') ? current : [...current, 'other']));
+        }
       }
       setLoading(false);
       loadMatches();
@@ -1810,6 +1818,8 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
           profession: profession.trim() || null,
           talents: talents.trim() || null,
           other_skills: skills.includes('other') ? otherSkills.trim() || null : null,
+          other_help: helpTypes.includes('other') ? otherHelp.trim() || null : null,
+          other_languages: languages.includes('other') ? otherLanguages.trim() || null : null,
           experience: experience.trim() || null,
           availability: availability.trim() || null,
         },
@@ -1818,11 +1828,11 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
       if (detailsError) throw detailsError;
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({ languages })
+        .update({ languages: languages.filter((code) => code !== 'other') })
         .eq('id', userId);
       if (profileError) throw profileError;
       setMessage('Saved. Your feed now shows the requests that match you first.');
-      onSaved?.(languages);
+      onSaved?.(languages.filter((code) => code !== 'other'));
       loadMatches();
     } catch (saveError) {
       setIsError(true);
@@ -1896,6 +1906,24 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
         values={helpTypes}
         change={setHelpTypes}
       />
+      {helpTypes.includes('other') && (
+        <View style={{ gap: 6 }}>
+          <Text style={s.bold}>Other kinds of help</Text>
+          <Text style={s.meta}>
+            Separate with commas. Requests that mention these words will find you.
+          </Text>
+          <TextInput
+            accessibilityLabel="Other kinds of help"
+            style={[s.input, { minHeight: 70 }]}
+            multiline
+            value={otherHelp}
+            onChangeText={setOtherHelp}
+            placeholder="e.g. Walking dogs, reading mail aloud, garden work"
+            placeholderTextColor={C.placeholder}
+            maxLength={300}
+          />
+        </View>
+      )}
 
       <MultiChoice
         title="Languages I speak"
@@ -1903,6 +1931,20 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
         values={languages}
         change={setLanguages}
       />
+      {languages.includes('other') && (
+        <View style={{ gap: 6 }}>
+          <Text style={s.bold}>Other languages</Text>
+          <TextInput
+            accessibilityLabel="Other languages"
+            style={s.input}
+            value={otherLanguages}
+            onChangeText={setOtherLanguages}
+            placeholder="e.g. Wolof, Tagalog, Creole, Sign language"
+            placeholderTextColor={C.placeholder}
+            maxLength={200}
+          />
+        </View>
+      )}
 
       <View style={{ gap: 6 }}>
         <Text style={s.bold}>Talents and hobbies</Text>
