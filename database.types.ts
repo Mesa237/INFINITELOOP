@@ -139,6 +139,65 @@ export type Database = {
           },
         ];
       };
+      user_notifications: {
+        Row: {
+          actor_id: string;
+          created_at: string;
+          help_request_id: string;
+          id: string;
+          match_id: string;
+          read_at: string | null;
+          recipient_id: string;
+        };
+        Insert: {
+          actor_id: string;
+          created_at?: string;
+          help_request_id: string;
+          id?: string;
+          match_id: string;
+          read_at?: string | null;
+          recipient_id: string;
+        };
+        Update: {
+          actor_id?: string;
+          created_at?: string;
+          help_request_id?: string;
+          id?: string;
+          match_id?: string;
+          read_at?: string | null;
+          recipient_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "user_notifications_actor_id_fkey";
+            columns: ["actor_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_notifications_help_request_id_fkey";
+            columns: ["help_request_id"];
+            isOneToOne: false;
+            referencedRelation: "help_requests";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_notifications_match_id_fkey";
+            columns: ["match_id"];
+            isOneToOne: true;
+            referencedRelation: "matches";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_notifications_recipient_id_fkey";
+            columns: ["recipient_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       profile_preferences: {
         Row: {
           origin_country_code: string | null;

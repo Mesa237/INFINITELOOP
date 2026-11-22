@@ -192,7 +192,195 @@ function Communities() {
     </View>
   );
 }
-function CommunityBoard({ area, displayName, role, rulesAccepted, agree }) {
+function HelpOfferInbox({ isActive }) {
+  const { C } = useCoucouTheme();
+  const s = useS();
+  const [notifications, setNotifications] = useState([]);
+  const [names, setNames] = useState({});
+  const [requestTitles, setRequestTitles] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [busyId, setBusyId] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    if (!isActive) return undefined;
+
+    let active = true;
+    let channel;
+
+    async function loadNotifications() {
+      setLoading(true);
+      setError('');
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) throw new Error('Please sign in to view your inbox.');
+
+        const { data, error: notificationError } = await supabase
+          .from('user_notifications')
+          .select('id, actor_id, help_request_id, created_at, read_at')
+          .eq('recipient_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        if (notificationError) throw notificationError;
+        const rows = data ?? [];
+
+        const actorIds = [...new Set(rows.map((item) => item.actor_id))];
+        const requestIds = [...new Set(rows.map((item) => item.help_request_id))];
+        let profileRows = [];
+        let requestRows = [];
+        if (actorIds.length) {
+          const { data: profiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, display_name')
+            .in('id', actorIds);
+          if (profilesError) throw profilesError;
+          profileRows = profiles ?? [];
+        }
+        if (requestIds.length) {
+          const { data: requests, error: requestsError } = await supabase
+            .from('help_requests')
+            .select('id, title')
+            .in('id', requestIds);
+          if (requestsError) throw requestsError;
+          requestRows = requests ?? [];
+        }
+
+        if (active) {
+          setNotifications(rows);
+          setNames(
+            Object.fromEntries(
+              profileRows.map((profile) => [profile.id, profile.display_name]),
+            ),
+          );
+          setRequestTitles(
+            Object.fromEntries(requestRows.map((request) => [request.id, request.title])),
+          );
+        }
+
+        if (active) {
+          channel = supabase
+            .channel(`inbox-help-offers-${user.id}`)
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'user_notifications',
+                filter: `recipient_id=eq.${user.id}`,
+              },
+              () => setReloadKey((key) => key + 1),
+            )
+            .subscribe((status, subscriptionError) => {
+              if (
+                active &&
+                (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')
+              ) {
+                setError(
+                  subscriptionError?.message ||
+                    'Live inbox updates are unavailable. Refresh to check again.',
+                );
+              }
+            });
+        }
+      } catch (loadError) {
+        if (active) {
+          setError(getErrorMessage(loadError, 'Could not load inbox notifications.'));
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadNotifications();
+    return () => {
+      active = false;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [isActive, reloadKey]);
+
+  async function markAsRead(notification) {
+    if (notification.read_at || busyId) return;
+    setBusyId(notification.id);
+    setError('');
+    try {
+      const { data, error: updateError } = await supabase
+        .from('user_notifications')
+        .update({ read_at: new Date().toISOString() })
+        .eq('id', notification.id)
+        .select('id, read_at')
+        .maybeSingle();
+      if (updateError) throw updateError;
+      if (!data) throw new Error('This notification was not updated. Refresh and try again.');
+      setNotifications((previous) =>
+        previous.map((item) =>
+          item.id === data.id ? { ...item, read_at: data.read_at } : item,
+        ),
+      );
+    } catch (updateError) {
+      setError(getErrorMessage(updateError, 'Could not mark notification as read.'));
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  return (
+    <View style={s.card}>
+      <Text style={s.section}>Help offer notifications</Text>
+      {loading && <Text style={s.meta}>Loading notifications…</Text>}
+      {!!error && (
+        <Text accessibilityLiveRegion="polite" style={{ color: C.error }}>
+          {error}
+        </Text>
+      )}
+      {!loading && !notifications.length && !error && (
+        <Text style={s.body}>No help offer notifications yet.</Text>
+      )}
+      {notifications.map((notification) => (
+        <View
+          key={notification.id}
+          style={[s.card, { backgroundColor: C.page }]}
+        >
+          <Text style={s.body}>
+            {names[notification.actor_id] || 'A volunteer'} offered to help with{' '}
+            “{requestTitles[notification.help_request_id] || 'your request'}”.
+          </Text>
+          <Text style={s.meta}>
+            {new Date(notification.created_at).toLocaleString()}
+            {notification.read_at ? ' · Read' : ' · New'}
+          </Text>
+          {!notification.read_at && (
+            <Button
+              soft
+              label={busyId === notification.id ? 'Saving…' : 'Mark as read'}
+              disabled={Boolean(busyId)}
+              onPress={() => markAsRead(notification)}
+            />
+          )}
+        </View>
+      ))}
+      {!loading && (
+        <Button
+          soft
+          label="Refresh inbox"
+          onPress={() => setReloadKey((key) => key + 1)}
+        />
+      )}
+    </View>
+  );
+}
+function CommunityBoard({
+  isActive,
+  area,
+  displayName,
+  role,
+  rulesAccepted,
+  agree,
+}) {
   const { C } = useCoucouTheme();
   const s = useS();
   const [userId, setUserId] = useState(null);
@@ -228,7 +416,9 @@ function CommunityBoard({ area, displayName, role, rulesAccepted, agree }) {
   const [reviewReason, setReviewReason] = useState('');
 
   useEffect(() => {
-    let active = true;
+    if (!isActive) return undefined;
+
+    let isMounted = true;
 
     async function loadRequests() {
       setLoading(true);
@@ -321,7 +511,7 @@ function CommunityBoard({ area, displayName, role, rulesAccepted, agree }) {
           }),
         );
 
-        if (active) {
+        if (isMounted) {
           setUserId(user.id);
           setLoadedRole(profile.role);
           setRequests(requestRows);
@@ -337,24 +527,23 @@ function CommunityBoard({ area, displayName, role, rulesAccepted, agree }) {
             Object.fromEntries(profiles.map((profile) => [profile.id, profile.role])),
           );
         }
+
       } catch (loadError) {
-        if (active) {
+        if (isMounted) {
           setError(
-            loadError instanceof Error
-              ? loadError.message
-              : 'Could not load help requests. Try again.',
+            getErrorMessage(loadError, 'Could not load help requests. Try again.'),
           );
         }
       } finally {
-        if (active) setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
 
     loadRequests();
     return () => {
-      active = false;
+      isMounted = false;
     };
-  }, [reloadKey, role]);
+  }, [isActive, reloadKey, role]);
 
   async function writeDraft() {
     const text = aiText.trim();
@@ -969,7 +1158,7 @@ function CommunityBoard({ area, displayName, role, rulesAccepted, agree }) {
             </View>
           );
         })
-      ) : (
+      ) : error ? null : (
         <View style={s.card}>
           <Text style={s.body}>No help requests yet. You can post the first one.</Text>
         </View>
@@ -1540,6 +1729,7 @@ export default function CoucouSocial() {
           }}
         >
           <CommunityBoard
+            isActive={detail?.kind === 'help'}
             area={area}
             displayName={currentProfile?.display_name}
             role={currentProfile?.role}
@@ -1798,6 +1988,7 @@ export default function CoucouSocial() {
             ) : (
               <>
                 <Text style={s.title}>Inbox</Text>
+                <HelpOfferInbox isActive={!detail && tab === 'Inbox'} />
                 {Object.entries(threads)
                   .filter(([name]) => !blocked.includes(name))
                   .sort(
