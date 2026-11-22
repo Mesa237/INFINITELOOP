@@ -48,3 +48,7 @@ example
 # generated native folders
 /ios
 /android
+
+# Demo accounts (contain the shared demo password)
+scripts/demo/
+scripts/test-draft.mjs

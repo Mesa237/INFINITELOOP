@@ -1377,14 +1377,204 @@ function MatchConversation({ matchId, partnerName, onBack }) {
     </KeyboardAvoidingView>
   );
 }
-// Real help requests for the home screen. Row-level security decides what each
+// ---- Feed posters: bold colour, big headline, person as the subject, brand footer ----
+const POSTER_FONT = Platform.select({
+  ios: 'AvenirNextCondensed-Heavy',
+  android: 'sans-serif-condensed',
+  default: undefined,
+});
+// One dominant background per poster, 1–2 accent colours, rotating down the feed.
+const POSTER_THEMES = [
+  { bg: '#2B3FD6', ink: '#FFFFFF', accent: '#FFDF46', soft: '#C9D0FF' },
+  { bg: '#E5412D', ink: '#FFFFFF', accent: '#FFDF46', soft: '#FFD2C9' },
+  { bg: '#FFDF46', ink: '#20211C', accent: '#2B3FD6', soft: '#55574E' },
+  { bg: '#D8C2F4', ink: '#20211C', accent: '#E5412D', soft: '#55574E' },
+  { bg: '#0E9F8E', ink: '#FFFFFF', accent: '#FFDF46', soft: '#C7F2EC' },
+  { bg: '#20211C', ink: '#FFFDF4', accent: '#D8C2F4', soft: '#BDBEAF' },
+];
+// Witty hook per kind of help: small line + big emphasised line.
+const POSTER_HOOKS = {
+  appointments: ['Nobody should go', 'ALONE.'],
+  paperwork: ['Forms in French?', 'WE GOT THIS.'],
+  transportation: ['Need a lift?', 'HOP IN.'],
+  companionship: ['Coffee tastes better', 'TOGETHER.'],
+  language_practice: ['Parlons un peu,', 'MON AMI!'],
+  technology: ['Tech trouble?', 'NO DRAMA.'],
+  other: ['A neighbour', 'NEEDS YOU.'],
+};
+
+function PosterAvatar({ name, url, theme }) {
+  const size = 150;
+  const box = {
+    width: size,
+    height: size,
+    borderRadius: size / 2,
+    borderWidth: 5,
+    borderColor: theme.accent,
+    backgroundColor: theme.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    transform: [{ rotate: '-6deg' }],
+  };
+  if (url) {
+    return (
+      <Image
+        accessibilityLabel={(name || 'Neighbour') + ' profile picture'}
+        source={{ uri: url }}
+        style={box}
+      />
+    );
+  }
+  const initials = String(name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+  return (
+    <View style={box}>
+      <Text style={{ fontFamily: POSTER_FONT, fontWeight: '900', fontSize: 56, color: theme.bg }}>
+        {initials || '?'}
+      </Text>
+    </View>
+  );
+}
+
+function RequestPoster({ row, person, index, isVolunteer, onOpen }) {
+  const theme = POSTER_THEMES[index % POSTER_THEMES.length];
+  const [small, big] = POSTER_HOOKS[row.help_type] ?? POSTER_HOOKS.other;
+  const firstName = (person?.display_name || 'A neighbour').split(/\s+/)[0];
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${row.title}. ${isVolunteer ? 'Open to offer help' : 'Open your request'}`}
+      onPress={() => onOpen(row.id)}
+      style={({ pressed }) => [
+        {
+          backgroundColor: theme.bg,
+          borderRadius: 26,
+          padding: 20,
+          minHeight: 420,
+          overflow: 'hidden',
+          justifyContent: 'space-between',
+          gap: 14,
+        },
+        pressed && { opacity: 0.85 },
+      ]}
+    >
+      <View>
+        <Text
+          style={{
+            fontFamily: POSTER_FONT,
+            fontWeight: '900',
+            fontSize: 22,
+            color: theme.ink,
+            textTransform: 'uppercase',
+            letterSpacing: -0.3,
+          }}
+        >
+          {small}
+        </Text>
+        <Text
+          style={{
+            fontFamily: POSTER_FONT,
+            fontWeight: '900',
+            fontSize: 46,
+            lineHeight: 46,
+            color: theme.accent,
+            textTransform: 'uppercase',
+            letterSpacing: -1,
+          }}
+        >
+          {big}
+        </Text>
+        <Text
+          numberOfLines={2}
+          style={{ color: theme.ink, fontSize: 16, fontWeight: '800', marginTop: 8 }}
+        >
+          {row.title}
+        </Text>
+      </View>
+
+      <View style={{ alignItems: index % 2 ? 'flex-start' : 'flex-end' }}>
+        <PosterAvatar name={person?.display_name} url={person?.avatar_url} theme={theme} />
+      </View>
+
+      <View style={{ gap: 4 }}>
+        <Text
+          style={{
+            fontFamily: POSTER_FONT,
+            fontWeight: '900',
+            fontSize: 14,
+            color: theme.ink,
+            textTransform: 'uppercase',
+          }}
+        >
+          {isVolunteer ? firstName + ' is waiting.' : 'Your request is live.'}
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', gap: 6 }}>
+          <Text
+            style={{
+              fontFamily: POSTER_FONT,
+              fontWeight: '900',
+              fontSize: 40,
+              lineHeight: 40,
+              color: theme.accent,
+              letterSpacing: -1.5,
+            }}
+          >
+            COUCOU
+          </Text>
+          <Text
+            style={{
+              fontFamily: POSTER_FONT,
+              fontWeight: '900',
+              fontSize: 16,
+              color: theme.ink,
+              textTransform: 'uppercase',
+              marginBottom: 4,
+            }}
+          >
+            {isVolunteer ? '& lend a hand!' : '& see your offers!'}
+          </Text>
+          <Feather
+            name="arrow-up-right"
+            size={20}
+            color={theme.ink}
+            style={{ marginBottom: 5 }}
+          />
+        </View>
+        <Text
+          style={{
+            color: theme.soft,
+            fontSize: 11,
+            fontWeight: '800',
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+          }}
+        >
+          {row.neighborhood} · {new Date(row.created_at).toLocaleDateString('en-CA', {
+            month: 'short',
+            day: 'numeric',
+          })}{' '}
+          · {(row.help_type || 'other').replace('_', ' ')}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+// Real help requests for the home feed. Row-level security decides what each
 // person sees: volunteers see open requests, members see their own.
 function LatestRequests({ area, blocked, role, onOpen }) {
   const s = useS();
   const { C } = useCoucouTheme();
   const [rows, setRows] = useState([]);
+  const [people, setPeople] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const isVolunteer = role === 'volunteer' || role === 'both';
 
   useEffect(() => {
     let active = true;
@@ -1400,15 +1590,26 @@ function LatestRequests({ area, blocked, role, onOpen }) {
           .from('help_requests')
           .select('id, requester_id, title, help_type, neighborhood, status, created_at')
           .order('created_at', { ascending: false })
-          .limit(5);
-        query =
-          role === 'volunteer'
-            ? query.eq('status', 'open')
-            : query.eq('requester_id', user.id);
+          .limit(10);
+        query = isVolunteer
+          ? query.eq('status', 'open').neq('requester_id', user.id)
+          : query.eq('requester_id', user.id);
         if (area) query = query.eq('neighborhood', area);
         const { data, error: loadError } = await query;
         if (loadError) throw loadError;
-        if (active) setRows(data ?? []);
+        const ids = [...new Set((data ?? []).map((row) => row.requester_id))];
+        let byId = {};
+        if (ids.length) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, display_name, avatar_url')
+            .in('id', ids);
+          byId = Object.fromEntries((profiles ?? []).map((p) => [p.id, p]));
+        }
+        if (active) {
+          setRows(data ?? []);
+          setPeople(byId);
+        }
       } catch (loadError) {
         if (active) setError(getErrorMessage(loadError, 'Could not load requests.'));
       } finally {
@@ -1428,7 +1629,7 @@ function LatestRequests({ area, blocked, role, onOpen }) {
       active = false;
       void supabase.removeChannel(channel);
     };
-  }, [area, role]);
+  }, [area, role, isVolunteer]);
 
   const visible = rows.filter((row) => !blocked.includes(row.requester_id));
   if (loading && !rows.length) return <Text style={s.meta}>Loading requests…</Text>;
@@ -1436,29 +1637,21 @@ function LatestRequests({ area, blocked, role, onOpen }) {
   if (!visible.length) {
     return (
       <Text style={s.body}>
-        {role === 'volunteer'
+        {isVolunteer
           ? 'No open requests' + (area ? ' in ' + area : '') + ' right now.'
           : 'You have no requests yet. Tap “+ Ask for help” to write one with the AI assistant.'}
       </Text>
     );
   }
-  return visible.map((row) => (
-    <Pressable
+  return visible.map((row, index) => (
+    <RequestPoster
       key={row.id}
-      accessibilityRole="button"
-      style={s.card}
-      onPress={() => onOpen(row.id)}
-    >
-      <Text style={s.meta}>
-        {(row.help_type || 'other').replace('_', ' ')} · {row.status.toUpperCase()}
-      </Text>
-      <Text style={s.cardTitle}>
-        {row.title} <Feather name="arrow-up-right" size={16} color={C.text} />
-      </Text>
-      <Text style={s.meta}>
-        {row.neighborhood} · {new Date(row.created_at).toLocaleDateString()}
-      </Text>
-    </Pressable>
+      row={row}
+      person={people[row.requester_id]}
+      index={index}
+      isVolunteer={isVolunteer}
+      onOpen={onOpen}
+    />
   ));
 }
 
@@ -3008,12 +3201,16 @@ export default function CoucouSocial() {
               <>
                 <View style={s.hero}>
                   <Image source={require('../../assets/images/logo.jpg')} style={s.heroLogo} resizeMode="contain" />
-                  <Text style={s.eyebrow}>MONTRÉAL</Text>
-                  <Text style={s.heroTitle}>Around the block.</Text>
+                  <Text style={s.eyebrow}>MONTRÉAL · NEIGHBOURS HELPING NEIGHBOURS</Text>
+                  <Text style={[s.heroTitle, { fontFamily: POSTER_FONT, textTransform: 'uppercase' }]}>
+                    {currentProfile?.role === 'volunteer' || currentProfile?.role === 'both'
+                      ? 'Someone nearby\nneeds you.'
+                      : 'Ask. Get help.\nSay coucou.'}
+                  </Text>
                 </View>
                 <View style={s.header}>
                   <Text style={s.section}>
-                    {currentProfile?.role === 'volunteer'
+                    {currentProfile?.role === 'volunteer' || currentProfile?.role === 'both'
                       ? 'People who need help'
                       : 'Your requests'}
                   </Text>
@@ -3021,7 +3218,9 @@ export default function CoucouSocial() {
                     label={
                       currentProfile?.role === 'volunteer'
                         ? 'Open board'
-                        : '+ Ask for help'
+                        : currentProfile?.role === 'both'
+                          ? 'Board / ask'
+                          : '+ Ask for help'
                     }
                     onPress={() => openHelp()}
                   />
