@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import PublicServices from './public-services';
@@ -19,6 +20,7 @@ import {
   THEME_MODES,
   useCoucouTheme,
 } from '../theme/coucou';
+import { setActivePortal } from '../../lib/portal';
 const areas = ['Downtown', 'Le Plateau', 'Verdun'];
 const people = [
   {
@@ -347,9 +349,10 @@ function CommunityBoard({ area, displayName, rulesAccepted, agree }) {
       setEditing(false);
     } catch (submitError) {
       setError(
-        submitError instanceof Error
-          ? submitError.message
-          : 'Could not publish your request. Try again.',
+        getErrorMessage(
+          submitError,
+          'Could not publish your request. Try again.',
+        ),
       );
     } finally {
       setSaving(false);
@@ -853,6 +856,11 @@ const useS = makeStyles((C) => ({
     borderRadius: 18,
     overflow: 'hidden',
   },
+  profilePicture: {
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+  },
   orbit: {
     position: 'absolute',
     width: '130%',
@@ -950,6 +958,22 @@ const initialPosts = [
 ];
 const matches = (query, ...values) =>
   values.join(' ').toLowerCase().includes(query.trim().toLowerCase());
+function getErrorMessage(error, fallback) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = error.message;
+    if (typeof message === 'string') {
+      const details =
+        'details' in error && typeof error.details === 'string'
+          ? error.details
+          : '';
+      const hint =
+        'hint' in error && typeof error.hint === 'string' ? error.hint : '';
+      return [message, details, hint].filter(Boolean).join(' ');
+    }
+  }
+  return fallback;
+}
 export default function CoucouSocial() {
   const { C, mode: themeMode } = useCoucouTheme();
   const s = useS();
@@ -974,6 +998,8 @@ export default function CoucouSocial() {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [profileRating, setProfileRating] = useState(null);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [pictureSaving, setPictureSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -990,7 +1016,7 @@ export default function CoucouSocial() {
         let profileData;
         const { data, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, role, languages, neighborhood, bio')
+          .select('id, display_name, role, languages, neighborhood, bio, avatar_url')
           .eq('id', user.id)
           .maybeSingle();
         if (profileError) throw profileError;
@@ -1004,7 +1030,7 @@ export default function CoucouSocial() {
           const { data: created, error: createError } = await supabase
             .from('profiles')
             .upsert({ id: user.id, display_name: fallbackName.slice(0, 80) })
-            .select('id, display_name, role, languages, neighborhood, bio')
+            .select('id, display_name, role, languages, neighborhood, bio, avatar_url')
             .single();
           if (createError) throw createError;
           profileData = created;
@@ -1061,6 +1087,118 @@ export default function CoucouSocial() {
       setTrail([]);
     } else go({ kind: 'profile', name });
   };
+  async function changeRole(role) {
+    if (!currentUserId || roleSaving) return;
+
+    setRoleSaving(true);
+    setNotice('');
+    try {
+      const { error: roleError } = await supabase.rpc('change_my_role', {
+        target_role: role,
+      });
+      if (roleError) throw roleError;
+
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, display_name, role, languages, neighborhood, bio, avatar_url')
+        .eq('id', currentUserId)
+        .single();
+      if (profileError) throw profileError;
+      if (updatedProfile.role !== role) {
+        throw new Error('The saved role did not match the selected role.');
+      }
+      setCurrentProfile(updatedProfile);
+      setActivePortal(role === 'seeker' ? 'member' : role);
+      setNotice('Your role was saved to your account.');
+      close();
+    } catch (roleError) {
+      const errorMessage =
+        roleError instanceof Error
+          ? roleError.message
+          : typeof roleError === 'object' &&
+              roleError !== null &&
+              'message' in roleError &&
+              typeof roleError.message === 'string'
+            ? roleError.message
+            : 'Could not update your role.';
+      setNotice(
+        errorMessage,
+      );
+    } finally {
+      setRoleSaving(false);
+    }
+  }
+  async function changeProfilePicture() {
+    if (!currentUserId || pictureSaving) return;
+
+    setPictureSaving(true);
+    setNotice('');
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        base64: true,
+      });
+      if (result.canceled) return;
+
+      const image = result.assets[0];
+      if (!image?.base64) {
+        throw new Error('The selected photo could not be read. Please try another photo.');
+      }
+
+      const mimeType = image.mimeType || 'image/jpeg';
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
+        throw new Error('Choose a JPEG, PNG, or WebP image.');
+      }
+
+      if (image.base64.length > (5 * 1024 * 1024 * 4) / 3 + 4) {
+        throw new Error('Choose a photo smaller than 5 MB.');
+      }
+      const binary = atob(image.base64);
+      if (binary.length > 5 * 1024 * 1024) {
+        throw new Error('Choose a photo smaller than 5 MB.');
+      }
+      const imageData = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        imageData[index] = binary.charCodeAt(index);
+      }
+
+      const filePath = `${currentUserId}/profile-picture`;
+      const { error: uploadError } = await supabase.storage
+        .from('coucou-profile-pictures')
+        .upload(filePath, imageData, {
+          cacheControl: '3600',
+          contentType: mimeType,
+          upsert: true,
+        });
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrl } = supabase.storage
+        .from('coucou-profile-pictures')
+        .getPublicUrl(filePath);
+      const avatarUrl = `${publicUrl.publicUrl}?v=${Date.now()}`;
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: avatarUrl })
+        .eq('id', currentUserId)
+        .select('id, display_name, role, languages, neighborhood, bio, avatar_url')
+        .single();
+      if (profileError) throw profileError;
+
+      setCurrentProfile(updatedProfile);
+      setNotice('Profile picture updated.');
+    } catch (pictureError) {
+      setNotice(
+        pictureError instanceof Error
+          ? pictureError.message
+          : 'Could not update your profile picture.',
+      );
+    } finally {
+      setPictureSaving(false);
+    }
+  }
   const inArea = (value) => !area || area === value;
   const filteredPosts = posts.filter(
     (p) =>
@@ -1225,11 +1363,29 @@ export default function CoucouSocial() {
             {(!detail && tab === 'Me') || author ? (
               <>
                 <View style={s.portrait}>
-                  <View style={s.orbit} />
-                  <View style={s.sun}>
-                    <Text style={s.monogram}>{author?.initials ?? 'ME'}</Text>
-                  </View>
+                  {!author && currentProfile?.avatar_url ? (
+                    <Image
+                      source={{ uri: currentProfile.avatar_url }}
+                      style={s.profilePicture}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <>
+                      <View style={s.orbit} />
+                      <View style={s.sun}>
+                        <Text style={s.monogram}>{author?.initials ?? 'ME'}</Text>
+                      </View>
+                    </>
+                  )}
                 </View>
+                {!author && (
+                  <Button
+                    soft
+                    disabled={pictureSaving}
+                    label={pictureSaving ? 'Updating photo…' : 'Change profile picture'}
+                    onPress={changeProfilePicture}
+                  />
+                )}
                 <Text style={s.title}>
                   {author?.name ?? currentProfile?.display_name ?? 'My profile'}
                 </Text>
@@ -1308,17 +1464,10 @@ export default function CoucouSocial() {
                       label="Community rules"
                       onPress={() => setModal('rules')}
                     />
-                    <Text style={s.meta}>
-                      Blocked members: {blocked.length} · Reports sent:{' '}
-                      {reports.length}
-                    </Text>
                     <Button
                       soft
-                      label="Sign out"
-                      onPress={async () => {
-                        const { error } = await supabase.auth.signOut();
-                        if (error) setNotice(error.message);
-                      }}
+                      label="Change role"
+                      onPress={() => setModal('role')}
                     />
                   </>
                 )}
@@ -1333,6 +1482,12 @@ export default function CoucouSocial() {
                   .map(postCard)}
                 {!author && !posts.some((p) => p.author === 'You') && (
                   <Text style={s.body}>Your posts will appear here.</Text>
+                )}
+                {!author && (
+                  <Text style={[s.meta, { color: '#C62828' }]}>
+                    Blocked members: {blocked.length} · Reports sent:{' '}
+                    {reports.length}
+                  </Text>
                 )}
               </>
             ) : tab === 'Feed' ? (
@@ -1483,6 +1638,32 @@ export default function CoucouSocial() {
                       close();
                     }}
                   />
+                </>
+              ) : modal === 'role' ? (
+                <>
+                  <Text style={s.title}>Change your role</Text>
+                  <Text style={s.body}>
+                    Your choice is saved to your profile and membership records.
+                  </Text>
+                  {[
+                    { value: 'seeker', label: 'Member' },
+                    { value: 'volunteer', label: 'Volunteer' },
+                    { value: 'both', label: 'Both' },
+                  ].map((role) => (
+                    <Button
+                      key={role.value}
+                      soft={currentProfile?.role !== role.value}
+                      label={
+                        roleSaving
+                          ? 'Saving…'
+                          : currentProfile?.role === role.value
+                            ? `${role.label} · Current`
+                            : role.label
+                      }
+                      disabled={roleSaving || currentProfile?.role === role.value}
+                      onPress={() => changeRole(role.value)}
+                    />
+                  ))}
                 </>
               ) : modal === 'post' ? (
                 <>

@@ -12,7 +12,7 @@ This folder contains the versioned database schema for CouCouMontreal.
 
 | Table | Purpose | Access |
 | --- | --- | --- |
-| `profiles` | Public display name, role, languages, Montréal neighbourhood, and short bio | Signed-in users can read; each user edits their own |
+| `profiles` | Public display name, role, profile picture, languages, Montréal neighbourhood, and short bio | Signed-in users can read; each user edits their own |
 | `profile_preferences` | Optional country-of-origin preference for matching | Private to the profile owner |
 | `help_requests` | Help type, description, preferred language, neighbourhood, schedule, and status | Signed-in users can browse open requests; requester and match volunteer can view their request |
 | `matches` | Volunteer offers and their status | Only the requester and volunteer can view a match |
@@ -23,6 +23,10 @@ This folder contains the versioned database schema for CouCouMontreal.
 Ratings below 4 require a non-empty reason in the database. Use the `get_profile_rating` RPC to retrieve an aggregate score and review count without exposing review text.
 
 Profiles contain only fields intended to be visible to signed-in members. Country of origin is kept in `profile_preferences`, is optional, and is readable only by its owner. It should be used for recommendations only when the person opts in. Do not store exact home addresses in help requests; use a neighbourhood until people agree to meet.
+
+Users can change their own role from the Me page. The `change_my_role` RPC updates `profiles.role` and synchronizes the associated `members` and `volunteers` rows in one transaction.
+
+Profile pictures are stored in the public `coucou-profile-pictures` bucket. Authenticated users can upload or replace images only inside their own user-ID folder.
 
 The schema permits multiple volunteers to offer help on one open request, while a request can have only one accepted match at a time. The request owner accepts or rejects an offer; the volunteer can cancel their own pending offer. Match status updates also keep the help-request status in sync.
 
