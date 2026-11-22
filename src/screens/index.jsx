@@ -641,7 +641,15 @@ function MeetPanel({ matchId, userId, isVolunteer, partnerName, onProposed }) {
       setMyPoint(point);
       setLocationState('shared');
     } catch (locationError) {
-      setLocationState(locationError?.code === 'location_denied' ? 'denied' : 'error');
+      if (locationError?.code === 'location_denied') {
+        setLocationState('denied');
+        return;
+      }
+      setLocationState('error');
+      // A Supabase error has a message but is not an Error instance.
+      if (locationError && !(locationError instanceof Error) && locationError.message) {
+        setError('Your location was found but could not be saved: ' + locationError.message);
+      }
     }
   }, [matchId, userId]);
 
