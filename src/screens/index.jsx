@@ -129,6 +129,7 @@ function HelpOfferInbox({
   onOpenChat,
   onOpenRequest,
   onRefresh,
+  onSeen,
   reloadKey,
 }) {
   const { C } = useCoucouTheme();
@@ -354,6 +355,34 @@ function HelpOfferInbox({
     };
   }, [isActive, onRefresh, reloadKey]);
 
+  // Unread notifications the inbox no longer shows (an offer that was already
+  // answered, a chat that has ended) would keep the red badge forever: clear them.
+  useEffect(() => {
+    if (loading || !isActive) return;
+    const chatMatchIds = new Set(chats.map((chat) => chat.matchId));
+    const hidden = notifications.filter(
+      (n) =>
+        !n.read_at &&
+        !(n.notification_type === 'review') &&
+        !(n.notification_type === 'offer' && pendingOfferMatchIds.has(n.match_id)) &&
+        !(['accepted', 'message'].includes(n.notification_type) && chatMatchIds.has(n.match_id)),
+    );
+    if (!hidden.length) return;
+    const readAt = new Date().toISOString();
+    supabase
+      .from('user_notifications')
+      .update({ read_at: readAt })
+      .in('id', hidden.map((n) => n.id))
+      .then(({ error: clearError }) => {
+        if (clearError) return;
+        const ids = new Set(hidden.map((n) => n.id));
+        setNotifications((previous) =>
+          previous.map((item) => (ids.has(item.id) ? { ...item, read_at: readAt } : item)),
+        );
+        onSeen?.();
+      });
+  }, [loading, isActive, notifications, chats, pendingOfferMatchIds, onSeen]);
+
   async function markAsRead(notification) {
     if (notification.read_at || busyId) return;
     setBusyId(notification.id);
@@ -372,6 +401,7 @@ function HelpOfferInbox({
           item.id === data.id ? { ...item, read_at: data.read_at } : item,
         ),
       );
+      onSeen?.();
     } catch (updateError) {
       setError(getErrorMessage(updateError, 'Could not mark notification as read.'));
     } finally {
@@ -406,6 +436,7 @@ function HelpOfferInbox({
             readIds.has(item.id) ? { ...item, read_at: readAt } : item,
           ),
         );
+        onSeen?.();
       } catch (updateError) {
         setError(
           getErrorMessage(updateError, 'Could not update conversation notifications.'),
@@ -482,9 +513,15 @@ function HelpOfferInbox({
             pendingOfferMatchIds.has(notification.match_id),
         )
         .map((notification) => (
-          <View
+          <Pressable
             key={notification.id}
-            style={[s.card, { backgroundColor: C.page }]}
+            accessibilityRole="button"
+            onPress={() => markAsRead(notification)}
+            style={[
+              s.card,
+              { backgroundColor: C.page },
+              !notification.read_at && { borderColor: '#E5312B', borderWidth: 2 },
+            ]}
           >
             <Text style={s.body}>
               {names[notification.actor_id] || 'A volunteer'} offered to help with “
@@ -497,18 +534,12 @@ function HelpOfferInbox({
             <Button
               soft
               label="View request"
-              onPress={() => onOpenRequest(notification.help_request_id)}
+              onPress={async () => {
+                await markAsRead(notification);
+                onOpenRequest(notification.help_request_id);
+              }}
             />
-            {!notification.read_at && (
-              <Button
-                soft
-                label={busyId === notification.id ? 'Saving…' : 'Mark as read'}
-                disabled={Boolean(busyId)}
-                onPress={() => markAsRead(notification)}
-              />
-            )
-            }
-          </View>
+          </Pressable>
         ))}
       {notifications
         .filter(
@@ -517,9 +548,15 @@ function HelpOfferInbox({
         .map((notification) => {
           const review = reviewDetails[notification.review_id];
           return (
-            <View
+            <Pressable
               key={notification.id}
-              style={[s.card, { backgroundColor: C.page }]}
+              accessibilityRole="button"
+              onPress={() => markAsRead(notification)}
+              style={[
+                s.card,
+                { backgroundColor: C.page },
+                !notification.read_at && { borderColor: '#E5312B', borderWidth: 2 },
+              ]}
             >
               <Text style={s.body}>
                 {names[notification.actor_id] || 'Your neighbour'} rated you{' '}
@@ -533,17 +570,12 @@ function HelpOfferInbox({
               <Button
                 soft
                 label="View request"
-                onPress={() => onOpenRequest(notification.help_request_id)}
+                onPress={async () => {
+                  await markAsRead(notification);
+                  onOpenRequest(notification.help_request_id);
+                }}
               />
-              {!notification.read_at && (
-                <Button
-                  soft
-                  label={busyId === notification.id ? 'Saving…' : 'Mark as read'}
-                  disabled={Boolean(busyId)}
-                  onPress={() => markAsRead(notification)}
-                />
-              )}
-            </View>
+            </Pressable>
           );
         })}
     </View>
@@ -1198,6 +1230,14 @@ function MatchConversation({ matchId, partnerName, onBack }) {
           .eq('match_id', matchId)
           .order('created_at', { ascending: true });
         if (messagesError) throw messagesError;
+        // You are looking at this chat, so its notifications are seen.
+        await supabase
+          .from('user_notifications')
+          .update({ read_at: new Date().toISOString() })
+          .eq('recipient_id', user.id)
+          .eq('match_id', matchId)
+          .neq('notification_type', 'review')
+          .is('read_at', null);
 
         if (active) {
           setUserId(user.id);
@@ -3815,6 +3855,7 @@ export default function CoucouSocial() {
                   }
                   onOpenRequest={(requestId) => openHelp(requestId)}
                   onRefresh={refreshInbox}
+                  onSeen={loadUnread}
                   reloadKey={inboxReloadKey}
                 />
                 <Button
