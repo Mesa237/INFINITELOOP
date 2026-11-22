@@ -3,7 +3,8 @@
 // Tapping a square opens the official page; tapping the number starts a call.
 import React from 'react';
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
-import { makeStyles } from '../theme/coucou';
+import { Feather } from '@expo/vector-icons';
+import { makeStyles, useCoucouTheme } from '../theme/coucou';
 
 // Numbers and hours from official websites (Nov 2026). They can change.
 export const SERVICES = [
@@ -20,6 +21,7 @@ export const SERVICES = [
 
 function Square({ s }) {
   const st = useStyles();
+  const { C } = useCoucouTheme();
   const urgent = s.urgent;
   return (
     <Pressable
@@ -30,14 +32,17 @@ function Square({ s }) {
     >
       <View style={st.top}>
         <Text style={[st.code, urgent && st.codeUrgent]}>{s.code}</Text>
-        <Text style={[st.arrow, urgent && st.onUrgent]}>↗</Text>
+        <Feather name="arrow-up-right" size={20} color={urgent ? C.invertText : C.text} />
       </View>
       <View style={{ gap: 2 }}>
         <Text style={[st.name, urgent && st.onUrgent]}>{s.name}</Text>
         <Text style={[st.desc, urgent && st.onUrgentMuted]}>{s.desc}</Text>
       </View>
       <Pressable accessibilityRole="button" accessibilityLabel={`Call ${s.name}`} onPress={() => Linking.openURL(`tel:${s.dial}`)}>
-        <Text style={[st.num, urgent && st.onUrgent]}>☎ {s.phone}</Text>
+        <View style={st.phoneRow}>
+          <Feather name="phone" size={14} color={urgent ? C.invertText : C.text} />
+          <Text style={[st.num, urgent && st.onUrgent]}>{s.phone}</Text>
+        </View>
         <Text style={[st.hrs, urgent && st.onUrgentMuted]}>{s.hrs}</Text>
       </Pressable>
     </Pressable>
@@ -46,10 +51,11 @@ function Square({ s }) {
 
 export default function PublicServices() {
   const st = useStyles();
+  const { C } = useCoucouTheme();
   return (
     <ScrollView contentContainerStyle={st.page}>
       <View style={st.hero}>
-        <Text style={st.mark}>☀</Text>
+        <Feather name="sun" size={150} color={C.sunMark} style={st.mark} />
         <Text style={st.eyebrow}>PUBLIC SERVICES</Text>
         <Text style={st.title}>Need an official answer?</Text>
         <Text style={st.sub}>Tap a square to open the official page, or tap the number to call.</Text>
@@ -69,7 +75,7 @@ export default function PublicServices() {
 const useStyles = makeStyles((C) => ({
   page: { padding: 16, gap: 14, backgroundColor: C.page },
   hero: { backgroundColor: C.yellow, borderRadius: 28, padding: 22, overflow: 'hidden', gap: 6 },
-  mark: { position: 'absolute', top: -38, right: -15, fontSize: 158, color: C.sunMark },
+  mark: { position: 'absolute', top: -30, right: -30, opacity: 0.6 },
   eyebrow: { color: C.onAccent, fontSize: 12, fontWeight: '800', letterSpacing: 2 },
   title: { color: C.onAccent, fontSize: 34, lineHeight: 36, fontWeight: '900', letterSpacing: -1.5 },
   sub: { color: C.onAccent, fontSize: 15, lineHeight: 21 },
@@ -104,6 +110,7 @@ const useStyles = makeStyles((C) => ({
   arrow: { fontSize: 18, fontWeight: '900', color: C.text },
   name: { fontSize: 16, fontWeight: '800', color: C.text, letterSpacing: -0.3 },
   desc: { fontSize: 12, color: C.muted, lineHeight: 16 },
+  phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   num: { fontSize: 14, fontWeight: '900', color: C.text },
   hrs: { fontSize: 11, fontWeight: '700', color: C.muted },
   note: { fontSize: 12, color: C.muted, lineHeight: 17, marginBottom: 24 },

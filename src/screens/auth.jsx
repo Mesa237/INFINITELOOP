@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   getActivePortal,
   setActivePortal,
@@ -266,7 +267,7 @@ export default function AuthScreen({ initialError, onClearError }) {
                   accountType === "member" && styles.roleSelected,
                 ]}
               >
-                <Text style={styles.roleIcon}>👤</Text>
+                <Feather name="user" size={22} color={palette.ink} style={styles.roleIcon} />
                 <Text
                   style={[
                     styles.roleTitle,
@@ -294,7 +295,7 @@ export default function AuthScreen({ initialError, onClearError }) {
                   accountType === "volunteer" && styles.roleSelected,
                 ]}
               >
-                <Text style={styles.roleIcon}>🤝</Text>
+                <MaterialCommunityIcons name="handshake-outline" size={24} color={palette.ink} style={styles.roleIcon} />
                 <Text
                   style={[
                     styles.roleTitle,
@@ -322,7 +323,7 @@ export default function AuthScreen({ initialError, onClearError }) {
                   accountType === "both" && styles.roleSelected,
                 ]}
               >
-                <Text style={styles.roleIcon}>🌟</Text>
+                <Feather name="users" size={22} color={palette.ink} style={styles.roleIcon} />
                 <Text
                   style={[
                     styles.roleTitle,
@@ -590,7 +591,7 @@ const styles = StyleSheet.create({
     borderColor: palette.ink,
     backgroundColor: palette.highlight,
   },
-  roleIcon: { fontSize: 22, marginBottom: 4 },
+  roleIcon: { marginBottom: 4 },
   roleTitle: {
     color: palette.muted,
     fontSize: 14,

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import PublicServices from './public-services';
@@ -775,8 +776,9 @@ function MeetPanel({ matchId, userId, isVolunteer, partnerName, onProposed }) {
       )}
       {locationState === 'shared' && (
         <Text style={s.meta}>
-          📍 Your location is shared for this meeting only (rounded to about 100 m).
-          {' '}{partner} never sees it, only the suggested places.
+          <Feather name="map-pin" size={13} color={C.muted} /> Your location is shared for
+          this meeting only (rounded to about 100 m). {partner} never sees it, only the
+          suggested places.
         </Text>
       )}
       {(locationState === 'denied' || locationState === 'error') && (
@@ -857,7 +859,8 @@ function MeetPanel({ matchId, userId, isVolunteer, partnerName, onProposed }) {
                 ]}
               >
                 <Text style={s.bold}>
-                  {picked ? '✓ ' : ''}
+                  {picked ? <Feather name="check" size={15} color={C.text} /> : null}
+                  {picked ? ' ' : ''}
                   {place.name}
                 </Text>
                 <Text style={s.meta}>
@@ -1449,7 +1452,9 @@ function LatestRequests({ area, blocked, role, onOpen }) {
       <Text style={s.meta}>
         {(row.help_type || 'other').replace('_', ' ')} · {row.status.toUpperCase()}
       </Text>
-      <Text style={s.cardTitle}>{row.title} ↗</Text>
+      <Text style={s.cardTitle}>
+        {row.title} <Feather name="arrow-up-right" size={16} color={C.text} />
+      </Text>
       <Text style={s.meta}>
         {row.neighborhood} · {new Date(row.created_at).toLocaleDateString()}
       </Text>
@@ -2134,10 +2139,14 @@ function CommunityBoard({
                     {ratingsByProfile[offer.volunteer_id]?.review_count > 0
                       ? ' · ' +
                         Number(ratingsByProfile[offer.volunteer_id].average_rating).toFixed(1) +
-                        ' ★ (' +
-                        ratingsByProfile[offer.volunteer_id].review_count +
-                        ')'
+                        ' '
                       : ''}
+                    {ratingsByProfile[offer.volunteer_id]?.review_count > 0 ? (
+                      <>
+                        <Ionicons name="star" size={13} color={C.sunMark} />
+                        {' (' + ratingsByProfile[offer.volunteer_id].review_count + ')'}
+                      </>
+                    ) : null}
                   </Text>
                   <Button
                     label="Accept volunteer"
@@ -2217,7 +2226,12 @@ function CommunityBoard({
                           <Choices
                             title="Rate your experience"
                             values={['1', '2', '3', '4', '5']}
-                            labels={['1 ★', '2 ★', '3 ★', '4 ★', '5 ★']}
+                            labels={[1, 2, 3, 4, 5].map((n) => (
+                              <React.Fragment key={n}>
+                                {n + ' '}
+                                <Ionicons name="star" size={14} color={C.sunMark} />
+                              </React.Fragment>
+                            ))}
                             value={stars}
                             change={setStars}
                           />
@@ -2904,12 +2918,17 @@ export default function CoucouSocial() {
                 </Text>
                 {!author && (
                   <Text style={s.meta}>
-                    {profileRating?.review_count > 0
-                      ? Number(profileRating.average_rating).toFixed(1) +
-                        ' ★ · ' +
-                        profileRating.review_count +
-                        (profileRating.review_count === 1 ? ' review' : ' reviews')
-                      : 'No reviews yet'}
+                    {profileRating?.review_count > 0 ? (
+                      <>
+                        {Number(profileRating.average_rating).toFixed(1) + ' '}
+                        <Ionicons name="star" size={13} color={C.sunMark} />
+                        {' · ' +
+                          profileRating.review_count +
+                          (profileRating.review_count === 1 ? ' review' : ' reviews')}
+                      </>
+                    ) : (
+                      'No reviews yet'
+                    )}
                   </Text>
                 )}
                 <Text style={s.body}>
@@ -3039,7 +3058,9 @@ export default function CoucouSocial() {
                     style={s.card}
                     onPress={() => profile(p.name)}
                   >
-                    <Text style={s.cardTitle}>{p.name} ↗</Text>
+                    <Text style={s.cardTitle}>
+                      {p.name} <Feather name="arrow-up-right" size={16} color={C.text} />
+                    </Text>
                     <Text style={s.meta}>
                       {p.area} · {p.role}
                     </Text>
