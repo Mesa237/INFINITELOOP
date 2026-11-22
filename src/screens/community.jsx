@@ -16,7 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { WebView } from 'react-native-webview';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { makeStyles, useCoucouTheme } from '../theme/coucou';
@@ -29,6 +29,12 @@ const LIVE_ROOM_URL = 'https://coucoumtl.vercel.app/live.html';
 function LiveRoom({ visible, club, live, userId, onClose, onEnd }) {
   const { C } = useCoucouTheme();
   const [config, setConfig] = useState(null);
+  const webRef = useRef(null);
+  const leaveRoom = () => {
+    // Let the page stop the microphone first; close anyway after a moment.
+    webRef.current?.injectJavaScript('window.__coucouLeave && window.__coucouLeave(); true;');
+    setTimeout(() => onClose('leave'), 400);
+  };
   useEffect(() => {
     if (!visible) return;
     supabase.auth.getSession().then(({ data }) => {
@@ -60,8 +66,34 @@ function LiveRoom({ visible, club, live, userId, onClose, onEnd }) {
   }
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={() => onClose('leave')}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: C.page }}>
+    <Modal visible={visible} animationType="slide" onRequestClose={leaveRoom}>
+      <SafeAreaProvider>
+      <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: C.page }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            borderBottomWidth: 1,
+            borderColor: C.border,
+          }}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Leave the live room"
+            hitSlop={12}
+            onPress={leaveRoom}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 }}
+          >
+            <Feather name="phone-off" size={18} color={C.error} />
+            <Text style={{ color: C.error, fontWeight: '800', fontSize: 16 }}>Leave</Text>
+          </Pressable>
+          <Text style={{ color: C.muted, fontWeight: '800', fontSize: 13 }} numberOfLines={1}>
+            {club.name}
+          </Text>
+        </View>
         {Platform.OS === 'web' ? (
           <View style={{ padding: 24, gap: 12 }}>
             <Text style={{ color: C.text, fontWeight: '800' }}>
@@ -71,7 +103,11 @@ function LiveRoom({ visible, club, live, userId, onClose, onEnd }) {
           </View>
         ) : config ? (
           <WebView
+            ref={webRef}
             source={{ uri: LIVE_ROOM_URL }}
+            scrollEnabled
+            bounces
+            contentInsetAdjustmentBehavior="never"
             injectedJavaScriptBeforeContentLoaded={`window.COUCOU = ${JSON.stringify(config)}; true;`}
             onMessage={onMessage}
             javaScriptEnabled
@@ -82,6 +118,7 @@ function LiveRoom({ visible, club, live, userId, onClose, onEnd }) {
           />
         ) : null}
       </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }

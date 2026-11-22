@@ -15,10 +15,11 @@
     --border: #3A3B32; --soft: #2E2C36;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: var(--page); color: var(--text);
+  html { overflow-x: hidden; }
+  html, body { margin: 0; min-height: 100%; background: var(--page); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  .wrap { min-height: 100%; display: flex; flex-direction: column; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); gap: 16px; }
-  .top { display: flex; align-items: center; justify-content: space-between; }
+  .wrap { min-height: 100vh; display: flex; flex-direction: column; padding: 0 18px calc(96px + env(safe-area-inset-bottom)); gap: 16px; }
+  .top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; background: var(--page); padding: 12px 0 8px; margin: 0 -18px; padding-left: 18px; padding-right: 18px; }
   .leave { border: 0; background: none; color: var(--red); font-weight: 800; font-size: 16px; display: flex; align-items: center; gap: 6px; padding: 4px 0; }
   .live { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; letter-spacing: 1.5px; color: var(--red); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: blink 1.2s infinite; }
@@ -47,11 +48,11 @@
   .actions b { width: 100%; font-size: 14px; }
   .mini { border: 0; border-radius: 999px; padding: 8px 12px; font-weight: 800; font-size: 13px; background: var(--soft); color: var(--text); }
   .mini.red { background: var(--red); color: #fff; }
-  .float { position: sticky; bottom: 12px; align-self: center; display: flex; gap: 6px; background: #3A3B36; border-radius: 22px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+  .float { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 6; align-self: center; display: flex; gap: 6px; background: #3A3B36; border-radius: 22px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
   .fbtn { border: 0; width: 56px; height: 48px; border-radius: 16px; background: transparent; color: #fff; display: flex; align-items: center; justify-content: center; }
   .fbtn.active { background: var(--yellow); color: var(--ink); }
   .fbtn svg { width: 22px; height: 22px; }
-  .sheet { background: var(--card); border-top: 1px solid var(--border); margin: 0 -18px calc(-18px - env(safe-area-inset-bottom)); padding: 14px 18px calc(18px + env(safe-area-inset-bottom)); }
+  .sheet { background: var(--card); border: 1px solid var(--border); border-radius: 22px; padding: 14px 18px; }
   .share { display: flex; gap: 18px; margin-top: 10px; }
   .sbtn { border: 0; background: none; color: var(--text); display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; }
   .sbtn span { width: 48px; height: 48px; border-radius: 50%; background: var(--soft); display: flex; align-items: center; justify-content: center; }
@@ -60,6 +61,7 @@
   [data-theme="dark"] .btn { background: var(--yellow); color: var(--ink); }
   .btn.soft { background: var(--soft); color: var(--text); }
   .btn.red { background: var(--red); color: #fff; }
+  body.inapp .leave { visibility: hidden; }
   .note { color: var(--muted); font-size: 13px; font-weight: 600; text-align: center; }
   .center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
   svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
@@ -93,6 +95,7 @@
     return;
   }
   document.documentElement.dataset.theme = cfg.theme === 'dark' ? 'dark' : 'light';
+  if (window.ReactNativeWebView) document.body.classList.add('inapp');
 
   const db = supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
     global: { headers: { Authorization: 'Bearer ' + cfg.accessToken } },
@@ -376,6 +379,7 @@
     post(reason);
   }
 
+  window.__coucouLeave = () => (joined ? leave('leave') : post('leave'));
   renderIntro();
 })();
 </script>
