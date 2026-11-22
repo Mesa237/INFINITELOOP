@@ -1542,7 +1542,14 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen }) {
             textTransform: 'uppercase',
           }}
         >
-          {isVolunteer ? firstName + ' is waiting.' : 'Your request is live.'}
+          {isVolunteer
+            ? row.matched_skills?.length
+              ? 'Matches you: ' +
+                row.matched_skills
+                  .map((k) => SKILL_OPTIONS.find(([v]) => v === k)?.[1] ?? k)
+                  .join(', ')
+              : firstName + ' is waiting.'
+            : 'Your request is live.'}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', gap: 6 }}>
           <Text
@@ -1596,6 +1603,269 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen }) {
   );
 }
 
+// ---- Volunteer dashboard: what I can do, so the right requests find me ----
+const SKILL_OPTIONS = [
+  ['paperwork', 'Paperwork & forms'],
+  ['french', 'French'],
+  ['english', 'English'],
+  ['translation', 'Translation'],
+  ['driving', 'Driving / rides'],
+  ['technology', 'Phones & computers'],
+  ['healthcare_navigation', 'Health system'],
+  ['housing', 'Housing & leases'],
+  ['job_search', 'CVs & job search'],
+  ['tutoring', 'Tutoring'],
+  ['groceries', 'Groceries & errands'],
+  ['cooking', 'Cooking'],
+  ['moving', 'Moving & lifting'],
+  ['handyman', 'Small repairs'],
+  ['companionship', 'Company & visits'],
+  ['childcare', 'Children & school'],
+  ['pet_care', 'Pet care'],
+];
+const HELP_TYPE_LABELS = {
+  appointments: 'Appointments',
+  paperwork: 'Paperwork',
+  transportation: 'Transportation',
+  companionship: 'Companionship',
+  language_practice: 'Language practice',
+  technology: 'Technology',
+  other: 'Anything else',
+};
+const LANGUAGE_OPTIONS = [
+  ['en', 'English'], ['fr', 'French'], ['es', 'Spanish'], ['ar', 'Arabic'],
+  ['zh', 'Chinese'], ['fa', 'Persian'], ['uk', 'Ukrainian'], ['ru', 'Russian'],
+  ['pt', 'Portuguese'], ['it', 'Italian'], ['tr', 'Turkish'], ['hi', 'Hindi'],
+  ['ta', 'Tamil'], ['vi', 'Vietnamese'], ['ko', 'Korean'], ['he', 'Hebrew'],
+];
+
+function MultiChoice({ title, hint, options, values, change, max }) {
+  const s = useS();
+  const toggle = (value) => {
+    if (values.includes(value)) change(values.filter((v) => v !== value));
+    else if (!max || values.length < max) change([...values, value]);
+  };
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={s.bold}>{title}</Text>
+      {!!hint && <Text style={s.meta}>{hint}</Text>}
+      <View style={s.row}>
+        {options.map(([value, label]) => (
+          <Button
+            key={value}
+            label={label}
+            soft={!values.includes(value)}
+            onPress={() => toggle(value)}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
+  const { C } = useCoucouTheme();
+  const s = useS();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [isError, setIsError] = useState(false);
+  const [profession, setProfession] = useState('');
+  const [skills, setSkills] = useState([]);
+  const [helpTypes, setHelpTypes] = useState([]);
+  const [languages, setLanguages] = useState(initialLanguages ?? []);
+  const [talents, setTalents] = useState('');
+  const [experience, setExperience] = useState('');
+  const [availability, setAvailability] = useState('');
+  const [matches, setMatches] = useState(null);
+
+  const loadMatches = useCallback(async () => {
+    const { data, error } = await supabase.rpc('get_ranked_open_requests');
+    if (!error) setMatches((data ?? []).filter((row) => row.match_score > 0));
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data } = await supabase
+        .from('volunteer_details')
+        .select('skills, profession, experience, availability, help_types, talents')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (!active) return;
+      if (data) {
+        setSkills(data.skills ?? []);
+        setProfession(data.profession ?? '');
+        setExperience(data.experience ?? '');
+        setAvailability(data.availability ?? '');
+        setHelpTypes(data.help_types ?? []);
+        setTalents(data.talents ?? '');
+      }
+      setLoading(false);
+      loadMatches();
+    })();
+    return () => {
+      active = false;
+    };
+  }, [userId, loadMatches]);
+
+  async function save() {
+    setSaving(true);
+    setMessage('');
+    setIsError(false);
+    try {
+      const { error: detailsError } = await supabase.from('volunteer_details').upsert(
+        {
+          user_id: userId,
+          skills,
+          help_types: helpTypes,
+          profession: profession.trim() || null,
+          talents: talents.trim() || null,
+          experience: experience.trim() || null,
+          availability: availability.trim() || null,
+        },
+        { onConflict: 'user_id' },
+      );
+      if (detailsError) throw detailsError;
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ languages })
+        .eq('id', userId);
+      if (profileError) throw profileError;
+      setMessage('Saved. Your feed now shows the requests that match you first.');
+      onSaved?.(languages);
+      loadMatches();
+    } catch (saveError) {
+      setIsError(true);
+      setMessage(getErrorMessage(saveError, 'Could not save your dashboard.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <Text style={s.meta}>Loading your dashboard…</Text>;
+  return (
+    <View style={{ gap: 18 }}>
+      <View style={[s.hero, { gap: 6 }]}>
+        <Text style={s.eyebrow}>VOLUNTEER DASHBOARD</Text>
+        <Text style={[s.heroTitle, { fontFamily: POSTER_FONT, textTransform: 'uppercase', fontSize: 36, lineHeight: 38 }]}>
+          What can you{'\n'}help with?
+        </Text>
+        <Text style={{ color: C.onAccent, fontWeight: '700' }}>
+          {matches === null
+            ? 'Choose your skills to see who needs you.'
+            : matches.length
+              ? `${matches.length} open request${matches.length === 1 ? '' : 's'} match you right now.`
+              : 'No open requests match you yet. Add more skills or kinds of help.'}
+        </Text>
+      </View>
+
+      <View style={{ gap: 6 }}>
+        <Text style={s.bold}>Profession</Text>
+        <TextInput
+          accessibilityLabel="Profession"
+          style={s.input}
+          value={profession}
+          onChangeText={setProfession}
+          placeholder="e.g. Nurse, accountant, student"
+          placeholderTextColor={C.placeholder}
+          maxLength={80}
+        />
+      </View>
+
+      <MultiChoice
+        title="Skills and abilities"
+        hint="Requests that need these skills show first in your feed."
+        options={SKILL_OPTIONS}
+        values={skills}
+        change={setSkills}
+        max={15}
+      />
+
+      <MultiChoice
+        title="I'm willing to help with"
+        options={HELP_TYPES.map((type) => [type, HELP_TYPE_LABELS[type] ?? type])}
+        values={helpTypes}
+        change={setHelpTypes}
+      />
+
+      <MultiChoice
+        title="Languages I speak"
+        options={LANGUAGE_OPTIONS}
+        values={languages}
+        change={setLanguages}
+      />
+
+      <View style={{ gap: 6 }}>
+        <Text style={s.bold}>Talents and hobbies</Text>
+        <TextInput
+          accessibilityLabel="Talents and hobbies"
+          style={s.input}
+          value={talents}
+          onChangeText={setTalents}
+          placeholder="e.g. Plays piano, great listener, loves gardening"
+          placeholderTextColor={C.placeholder}
+          maxLength={300}
+        />
+      </View>
+
+      <View style={{ gap: 6 }}>
+        <Text style={s.bold}>Experience</Text>
+        <TextInput
+          accessibilityLabel="Experience"
+          style={[s.input, { minHeight: 80 }]}
+          multiline
+          value={experience}
+          onChangeText={setExperience}
+          placeholder="e.g. 5 years volunteering at a tax clinic"
+          placeholderTextColor={C.placeholder}
+          maxLength={500}
+        />
+      </View>
+
+      <View style={{ gap: 6 }}>
+        <Text style={s.bold}>Availability</Text>
+        <TextInput
+          accessibilityLabel="Availability"
+          style={s.input}
+          value={availability}
+          onChangeText={setAvailability}
+          placeholder="e.g. Weekday evenings and Sunday"
+          placeholderTextColor={C.placeholder}
+          maxLength={200}
+        />
+      </View>
+
+      <Button label={saving ? 'Saving…' : 'Save my dashboard'} disabled={saving} onPress={save} />
+      {!!message && (
+        <Text accessibilityLiveRegion="polite" style={{ color: isError ? C.error : C.success, fontWeight: '700' }}>
+          {message}
+        </Text>
+      )}
+
+      {!!matches?.length && (
+        <View style={{ gap: 8 }}>
+          <Text style={s.section}>Best matches for you</Text>
+          {matches.slice(0, 3).map((row) => (
+            <View key={row.id} style={s.card}>
+              <Text style={s.cardTitle}>{row.title}</Text>
+              <Text style={s.meta}>
+                {row.neighborhood}
+                {row.matched_skills?.length
+                  ? ' · Matches: ' +
+                    row.matched_skills
+                      .map((k) => SKILL_OPTIONS.find(([v]) => v === k)?.[1] ?? k)
+                      .join(', ')
+                  : ''}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 // Real help requests for the home feed. Row-level security decides what each
 // person sees: volunteers see open requests, members see their own.
 function LatestRequests({ area, blocked, role, onOpen }) {
@@ -1617,17 +1887,26 @@ function LatestRequests({ area, blocked, role, onOpen }) {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) return;
-        let query = supabase
-          .from('help_requests')
-          .select('id, requester_id, title, help_type, neighborhood, status, created_at')
-          .order('created_at', { ascending: false })
-          .limit(10);
-        query = isVolunteer
-          ? query.eq('status', 'open').neq('requester_id', user.id)
-          : query.eq('requester_id', user.id);
-        if (area) query = query.eq('neighborhood', area);
-        const { data, error: loadError } = await query;
-        if (loadError) throw loadError;
+        let data;
+        if (isVolunteer) {
+          // Ranked by the volunteer dashboard: skills, kinds of help, language, area.
+          const { data: ranked, error: rankError } = await supabase.rpc('get_ranked_open_requests');
+          if (rankError) throw rankError;
+          data = (ranked ?? [])
+            .filter((row) => !area || row.neighborhood === area)
+            .slice(0, 10);
+        } else {
+          let query = supabase
+            .from('help_requests')
+            .select('id, requester_id, title, help_type, neighborhood, status, created_at')
+            .eq('requester_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(10);
+          if (area) query = query.eq('neighborhood', area);
+          const { data: own, error: loadError } = await query;
+          if (loadError) throw loadError;
+          data = own;
+        }
         const ids = [...new Set((data ?? []).map((row) => row.requester_id))];
         let byId = {};
         if (ids.length) {
@@ -3112,6 +3391,16 @@ export default function CoucouSocial() {
           partnerName={detail.name}
           onBack={back}
         />
+      ) : detail?.kind === 'dashboard' && currentUserId ? (
+        <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+          <VolunteerDashboard
+            userId={currentUserId}
+            languages={currentProfile?.languages}
+            onSaved={(languages) =>
+              setCurrentProfile((profile) => ({ ...profile, languages }))
+            }
+          />
+        </ScrollView>
       ) : !detail && tab === 'Services' ? (
         <PublicServices />
       ) : (
@@ -3250,6 +3539,12 @@ export default function CoucouSocial() {
                       label="Community rules"
                       onPress={() => setModal('rules')}
                     />
+                    {['volunteer', 'both'].includes(currentProfile?.role) && (
+                      <Button
+                        label="Volunteer dashboard"
+                        onPress={() => go({ kind: 'dashboard' })}
+                      />
+                    )}
                     <Button
                       soft
                       label="Change role"
@@ -3297,6 +3592,13 @@ export default function CoucouSocial() {
                     onPress={() => openHelp()}
                   />
                 </View>
+                {['volunteer', 'both'].includes(currentProfile?.role) && (
+                  <Button
+                    soft
+                    label="Volunteer dashboard: your skills & matches"
+                    onPress={() => go({ kind: 'dashboard' })}
+                  />
+                )}
                 <LatestRequests
                   area={area}
                   blocked={blocked}
