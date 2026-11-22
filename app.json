@@ -26,6 +26,12 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow CouCouMTL to use your location to suggest a fair public meeting place."
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Allow CouCou Montréal to use a photo as your profile picture.",

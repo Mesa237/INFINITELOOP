@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import PublicServices from './public-services';
@@ -22,35 +23,20 @@ import {
   useCoucouTheme,
 } from '../theme/coucou';
 import { setActivePortal } from '../../lib/portal';
-const areas = ['Downtown', 'Le Plateau', 'Verdun'];
-const samplePeople = [
-  {
-    name: 'Camille',
-    initials: 'CM',
-    area: areas[1],
-    role: 'Local helper',
-    languages: 'French · English',
-    interest: 'Photo walks',
-    bio: 'I know a little street with painted staircases. Bring your camera and we can explore together.',
-  },
-  {
-    name: 'Noor',
-    initials: 'NA',
-    area: areas[0],
-    role: 'Newcomer',
-    languages: 'English · Arabic',
-    interest: 'Coffee walks',
-    bio: 'Just unpacked my last box. Looking for someone to try the cafés around Concordia with.',
-  },
-  {
-    name: 'Lou',
-    initials: 'LB',
-    area: areas[2],
-    role: 'Longtime local',
-    languages: 'French · English',
-    interest: 'Riverside walks',
-    bio: 'I walk along the river most mornings and would love some company.',
-  },
+// Montréal neighbourhoods for the area filter (real place names, no sample data).
+const areas = [
+  'Downtown',
+  'Le Plateau',
+  'Mile End',
+  'Verdun',
+  'Côte-des-Neiges',
+  'NDG',
+  'Saint-Henri',
+  'Rosemont',
+  'Villeray',
+  'Hochelaga',
+  'Ahuntsic',
+  'Outremont',
 ];
 function Button({ label, onPress, soft = false, disabled = false }) {
   const s = useS();
@@ -70,40 +56,6 @@ function Button({ label, onPress, soft = false, disabled = false }) {
     </Pressable>
   );
 }
-const GROUPS = [
-  {
-    id: 1,
-    name: 'Montréal French Conversation Circle',
-    city: 'Montréal',
-    languages: ['fr', 'en'],
-    category: 'language_exchange',
-    description: 'Practise French with neighbours.',
-  },
-  {
-    id: 2,
-    name: 'Montréal Newcomer Welcome Group',
-    city: 'Montréal',
-    languages: ['en', 'fr', 'zh'],
-    category: 'newcomer_support',
-    description: 'Meet newcomers and exchange local tips.',
-  },
-  {
-    id: 3,
-    name: 'Montréal Senior Neighbour Network',
-    city: 'Montréal',
-    languages: ['fr', 'en'],
-    category: 'senior_support',
-    description: 'Social visits and everyday help.',
-  },
-  {
-    id: 4,
-    name: 'Québec City French Conversation Circle',
-    city: 'Québec City',
-    languages: ['fr', 'en'],
-    category: 'language_exchange',
-    description: 'Find a conversation partner in Québec City.',
-  },
-];
 // The app has no language setting yet; the post language defaults to English.
 const APP_LANGUAGE = 'en';
 const HELP_TYPES = [
@@ -117,7 +69,6 @@ const HELP_TYPES = [
 ];
 const RULES =
   'Treat other members with respect, protect their privacy, and report abuse.';
-const members = ['', 'You', 'Camille', 'Noor', 'Lou'];
 function Choices({ title, values, labels, value, change }) {
   const s = useS();
   return (
@@ -133,62 +84,6 @@ function Choices({ title, values, labels, value, change }) {
           />
         ))}
       </View>
-    </View>
-  );
-}
-function Communities() {
-  const { C } = useCoucouTheme();
-  const s = useS();
-  const [city, setCity] = useState('');
-  const [language, setLanguage] = useState('');
-  const [category, setCategory] = useState('');
-  const groups = GROUPS.filter(
-    (g) =>
-      (!city || g.city === city) &&
-      (!language || g.languages.includes(language)) &&
-      (!category || g.category === category),
-  );
-  return (
-    <View style={[s.card, { backgroundColor: C.page }]}>
-      <Text style={s.section}>Find a community</Text>
-      <Choices
-        title="City"
-        values={['', 'Montréal', 'Québec City']}
-        labels={['All cities', 'Montréal', 'Québec City']}
-        value={city}
-        change={setCity}
-      />
-      <Choices
-        title="Language"
-        values={['', 'en', 'fr', 'zh']}
-        labels={['Any language', 'English', 'French', 'Chinese']}
-        value={language}
-        change={setLanguage}
-      />
-      <Choices
-        title="Category"
-        values={['', 'language_exchange', 'newcomer_support', 'senior_support']}
-        labels={[
-          'All categories',
-          'Language exchange',
-          'Newcomer support',
-          'Senior support',
-        ]}
-        value={category}
-        change={setCategory}
-      />
-      {groups.map((g) => (
-        <View key={g.id} style={s.card}>
-          <Text style={s.cardTitle}>{g.name}</Text>
-          <Text style={s.meta}>
-            {g.city} · {g.languages.join(' / ').toUpperCase()}
-          </Text>
-          <Text style={s.body}>{g.description}</Text>
-        </View>
-      ))}
-      {!groups.length && (
-        <Text style={s.body}>No matching communities. Try another filter.</Text>
-      )}
     </View>
   );
 }
@@ -678,11 +573,50 @@ function mapsUrl(proposal) {
     : `https://www.google.com/maps/search/?api=1&query=${name}`;
 }
 
-function MeetPanel({ matchId, userId, isVolunteer, onProposed }) {
+// Share this device's location for one match. Returns { lat, lng } or throws.
+async function shareMatchLocation(matchId, userId) {
+  const permission = await Location.requestForegroundPermissionsAsync();
+  if (permission.status !== 'granted') {
+    const denied = new Error('location_denied');
+    denied.code = 'location_denied';
+    throw denied;
+  }
+  const position = await Location.getCurrentPositionAsync({
+    accuracy: Location.Accuracy.Balanced,
+  });
+  const point = { lat: position.coords.latitude, lng: position.coords.longitude };
+  const { error } = await supabase
+    .from('match_locations')
+    .upsert(
+      { match_id: matchId, user_id: userId, lat: point.lat, lng: point.lng },
+      { onConflict: 'match_id,user_id' },
+    );
+  if (error) throw error;
+  return point;
+}
+
+async function placeNameFor(point) {
+  try {
+    const [address] = await Location.reverseGeocodeAsync({
+      latitude: point.lat,
+      longitude: point.lng,
+    });
+    if (!address) return '';
+    const street = [address.streetNumber, address.street].filter(Boolean).join(' ');
+    return [street || address.name, address.city].filter(Boolean).join(', ');
+  } catch {
+    return '';
+  }
+}
+
+function MeetPanel({ matchId, userId, isVolunteer, partnerName, onProposed }) {
   const { C } = useCoucouTheme();
   const s = useS();
   const [option, setOption] = useState('');
   const [placeName, setPlaceName] = useState('');
+  const [myPoint, setMyPoint] = useState(null);
+  const [locationState, setLocationState] = useState('asking'); // asking | shared | denied | error
+  const [partnerShared, setPartnerShared] = useState(false);
   const [places, setPlaces] = useState([]);
   const [placesLoading, setPlacesLoading] = useState(false);
   const [pickedPlace, setPickedPlace] = useState(null);
@@ -691,19 +625,45 @@ function MeetPanel({ matchId, userId, isVolunteer, onProposed }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const days = nextDays();
+  const partner = partnerName || 'the other person';
 
   const options = isVolunteer ? ['midpoint', 'volunteer'] : ['member', 'midpoint'];
   const optionLabels = isVolunteer
     ? ['Fair midpoint', 'My chosen place']
     : ['My location', 'Fair midpoint'];
 
-  async function chooseOption(next) {
-    setOption(next);
+  const askForLocation = useCallback(async () => {
+    if (!userId) return;
+    setLocationState('asking');
     setError('');
-    setPickedPlace(null);
-    if (next !== 'midpoint') return;
+    try {
+      const point = await shareMatchLocation(matchId, userId);
+      setMyPoint(point);
+      setLocationState('shared');
+    } catch (locationError) {
+      setLocationState(locationError?.code === 'location_denied' ? 'denied' : 'error');
+    }
+  }, [matchId, userId]);
+
+  // Opening Meet asks for location right away.
+  useEffect(() => {
+    askForLocation();
+  }, [askForLocation]);
+
+  const loadPlaces = useCallback(async () => {
     setPlacesLoading(true);
     try {
+      const { data: status, error: statusError } = await supabase.rpc(
+        'match_location_status',
+        { target_match_id: matchId },
+      );
+      if (statusError) throw statusError;
+      const shared = !!status?.[0]?.partner_shared;
+      setPartnerShared(shared);
+      if (!shared) {
+        setPlaces([]);
+        return;
+      }
       const { data, error: rpcError } = await supabase.rpc('suggest_meeting_places', {
         target_match_id: matchId,
       });
@@ -711,9 +671,27 @@ function MeetPanel({ matchId, userId, isVolunteer, onProposed }) {
       setPlaces(data ?? []);
     } catch {
       setPlaces([]);
-      setError('Could not find meeting places right now. Try again, or choose a place yourself.');
+      setError('Could not find meeting places right now. Try again.');
     } finally {
       setPlacesLoading(false);
+    }
+  }, [matchId]);
+
+  // While waiting for the partner, check again every 8 seconds.
+  useEffect(() => {
+    if (option !== 'midpoint' || locationState !== 'shared') return undefined;
+    loadPlaces();
+    if (partnerShared) return undefined;
+    const timer = setInterval(loadPlaces, 8000);
+    return () => clearInterval(timer);
+  }, [option, locationState, partnerShared, loadPlaces]);
+
+  async function chooseOption(next) {
+    setOption(next);
+    setError('');
+    setPickedPlace(null);
+    if (next === 'member' && myPoint && !placeName) {
+      setPlaceName(await placeNameFor(myPoint));
     }
   }
 
@@ -736,8 +714,21 @@ function MeetPanel({ matchId, userId, isVolunteer, onProposed }) {
         lat: pickedPlace.lat,
         lng: pickedPlace.lng,
       });
+    } else if (option === 'member') {
+      if (!myPoint) return;
+      Object.assign(row, {
+        place_name: placeName.trim() || 'My location',
+        lat: myPoint.lat,
+        lng: myPoint.lng,
+      });
     } else {
       row.place_name = placeName.trim();
+      try {
+        const [found] = await Location.geocodeAsync(row.place_name + ', Montréal, QC');
+        if (found) Object.assign(row, { lat: found.latitude, lng: found.longitude });
+      } catch {
+        // No coordinates: Open in Maps searches by the place name instead.
+      }
     }
     setBusy(true);
     setError('');
@@ -757,12 +748,40 @@ function MeetPanel({ matchId, userId, isVolunteer, onProposed }) {
   }
 
   const placeReady =
-    option === 'midpoint' ? !!pickedPlace : placeName.trim().length >= 2;
+    option === 'midpoint'
+      ? !!pickedPlace
+      : option === 'member'
+        ? !!myPoint
+        : placeName.trim().length >= 2;
   const canSend = !!option && placeReady && !!day && hour !== '' && !busy;
 
   return (
     <View style={[s.card, { backgroundColor: C.page }]}>
       <Text style={s.section}>Where should you meet?</Text>
+      {locationState === 'asking' && (
+        <Text style={s.meta}>Getting your location…</Text>
+      )}
+      {locationState === 'shared' && (
+        <Text style={s.meta}>
+          📍 Your location is shared for this meeting only (rounded to about 100 m).
+          {' '}{partner} never sees it, only the suggested places.
+        </Text>
+      )}
+      {(locationState === 'denied' || locationState === 'error') && (
+        <>
+          <Text style={{ color: C.error }}>
+            {locationState === 'denied'
+              ? 'Location is off. To find a fair meeting place, allow location for this app.'
+              : 'Could not get your location. Check that location services are on.'}
+          </Text>
+          <View style={s.row}>
+            <Button label="Try again" onPress={askForLocation} />
+            {locationState === 'denied' && Platform.OS !== 'web' && (
+              <Button soft label="Open Settings" onPress={() => Linking.openSettings()} />
+            )}
+          </View>
+        </>
+      )}
       <Choices
         title="Choose an option"
         values={options}
@@ -770,7 +789,25 @@ function MeetPanel({ matchId, userId, isVolunteer, onProposed }) {
         value={option}
         change={chooseOption}
       />
-      {(option === 'member' || option === 'volunteer') && (
+      {option === 'member' && (
+        <>
+          <Text style={s.meta}>
+            {myPoint
+              ? 'Your current location will be shared with ' + partner + ' in this proposal.'
+              : 'Allow location to use this option.'}
+          </Text>
+          <TextInput
+            accessibilityLabel="Place name"
+            style={s.input}
+            placeholderTextColor={C.placeholder}
+            placeholder="Name for this place, e.g. My home"
+            value={placeName}
+            onChangeText={setPlaceName}
+            maxLength={200}
+          />
+        </>
+      )}
+      {option === 'volunteer' && (
         <TextInput
           accessibilityLabel="Place name"
           style={s.input}
@@ -782,8 +819,15 @@ function MeetPanel({ matchId, userId, isVolunteer, onProposed }) {
         />
       )}
       {option === 'midpoint' &&
-        (placesLoading ? (
+        (locationState !== 'shared' ? (
+          <Text style={s.meta}>Share your location first.</Text>
+        ) : placesLoading && !places.length ? (
           <Text style={s.meta}>Finding fair places…</Text>
+        ) : !partnerShared ? (
+          <Text style={s.meta}>
+            Waiting for {partner} to open Meet and share their location. This
+            updates on its own.
+          </Text>
         ) : (
           places.map((place) => {
             const mine = isVolunteer ? place.volunteer_km : place.member_km;
@@ -805,7 +849,7 @@ function MeetPanel({ matchId, userId, isVolunteer, onProposed }) {
                   {place.name}
                 </Text>
                 <Text style={s.meta}>
-                  You: {Number(mine).toFixed(1)} km · Them: {Number(theirs).toFixed(1)} km
+                  You: {Number(mine).toFixed(1)} km · {partner}: {Number(theirs).toFixed(1)} km
                 </Text>
               </Pressable>
             );
@@ -1240,6 +1284,7 @@ function MatchConversation({ matchId, partnerName, onBack }) {
             matchId={matchId}
             userId={userId}
             isVolunteer={isVolunteer}
+            partnerName={partnerName}
             onProposed={(row) => {
               setProposals((previous) => upsertProposal(previous, row));
               setMeetOpen(false);
@@ -1317,6 +1362,89 @@ function MatchConversation({ matchId, partnerName, onBack }) {
     </KeyboardAvoidingView>
   );
 }
+// Real help requests for the home screen. Row-level security decides what each
+// person sees: volunteers see open requests, members see their own.
+function LatestRequests({ area, blocked, role, onOpen }) {
+  const s = useS();
+  const { C } = useCoucouTheme();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      setLoading(true);
+      setError('');
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+        let query = supabase
+          .from('help_requests')
+          .select('id, requester_id, title, help_type, neighborhood, status, created_at')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        query =
+          role === 'volunteer'
+            ? query.eq('status', 'open')
+            : query.eq('requester_id', user.id);
+        if (area) query = query.eq('neighborhood', area);
+        const { data, error: loadError } = await query;
+        if (loadError) throw loadError;
+        if (active) setRows(data ?? []);
+      } catch (loadError) {
+        if (active) setError(getErrorMessage(loadError, 'Could not load requests.'));
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    if (role) load();
+    const channel = supabase
+      .channel('home-help-requests')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'help_requests' },
+        () => load(),
+      )
+      .subscribe();
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [area, role]);
+
+  const visible = rows.filter((row) => !blocked.includes(row.requester_id));
+  if (loading && !rows.length) return <Text style={s.meta}>Loading requests…</Text>;
+  if (error) return <Text style={{ color: C.error }}>{error}</Text>;
+  if (!visible.length) {
+    return (
+      <Text style={s.body}>
+        {role === 'volunteer'
+          ? 'No open requests' + (area ? ' in ' + area : '') + ' right now.'
+          : 'You have no requests yet. Tap “+ Ask for help” to write one with the AI assistant.'}
+      </Text>
+    );
+  }
+  return visible.map((row) => (
+    <Pressable
+      key={row.id}
+      accessibilityRole="button"
+      style={s.card}
+      onPress={() => onOpen(row.id)}
+    >
+      <Text style={s.meta}>
+        {(row.help_type || 'other').replace('_', ' ')} · {row.status.toUpperCase()}
+      </Text>
+      <Text style={s.cardTitle}>{row.title} ↗</Text>
+      <Text style={s.meta}>
+        {row.neighborhood} · {new Date(row.created_at).toLocaleDateString()}
+      </Text>
+    </Pressable>
+  ));
+}
+
 function CommunityBoard({
   isActive,
   area,
@@ -2332,35 +2460,6 @@ const useS = makeStyles((C) => ({
     borderRadius: 12,
   },
 }));
-const initialPosts = [
-  {
-    id: 1,
-    author: 'Noor',
-    area: 'Downtown',
-    topic: 'Coffee walk',
-    content:
-      'Anyone up for a coffee walk near Concordia on Friday? I moved here last week and would love some company.',
-    likes: 4,
-  },
-  {
-    id: 2,
-    author: 'Camille',
-    area: 'Le Plateau',
-    topic: 'Photo walk',
-    content:
-      'Taking my camera out for the colourful staircases this weekend. Beginners welcome!',
-    likes: 8,
-  },
-  {
-    id: 3,
-    author: 'Lou',
-    area: 'Verdun',
-    topic: 'Language exchange',
-    content:
-      'English and French by the river? Let’s practise a few phrases on a walk.',
-    likes: 3,
-  },
-];
 const matches = (query, ...values) =>
   values.join(' ').toLowerCase().includes(query.trim().toLowerCase());
 function getErrorMessage(error, fallback) {
@@ -2398,14 +2497,10 @@ export default function CoucouSocial() {
   const [reports, setReports] = useState([]);
   const [reportReason, setReportReason] = useState('');
   const [notice, setNotice] = useState('');
-  const [posts, setPosts] = useState(initialPosts);
-  const [people, setPeople] = useState(samplePeople);
+  const [people, setPeople] = useState([]);
   const [peopleLoading, setPeopleLoading] = useState(false);
   const [peopleError, setPeopleError] = useState('');
-  const [likes, setLikes] = useState([]);
   const [query, setQuery] = useState('');
-  const [postText, setPostText] = useState('');
-  const [postArea, setPostArea] = useState('Downtown');
   const [bio, setBio] = useState('');
   const [currentProfile, setCurrentProfile] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
@@ -2516,15 +2611,7 @@ export default function CoucouSocial() {
             bio: profile.bio ?? '',
             avatar_url: profile.avatar_url,
           }));
-          const profileNames = new Set(
-            discoverProfiles.map((profile) => profile.name.toLowerCase()),
-          );
-          setPeople([
-            ...samplePeople.filter(
-              (person) => !profileNames.has(person.name.toLowerCase()),
-            ),
-            ...discoverProfiles,
-          ]);
+          setPeople(discoverProfiles);
         }
       } catch (loadError) {
         if (active) {
@@ -2542,13 +2629,26 @@ export default function CoucouSocial() {
       active = false;
     };
   }, [currentUserId]);
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+    let active = true;
+    (async () => {
+      const [{ data: blockRows }, { count: reportCount }] = await Promise.all([
+        supabase.from('blocks').select('blocked_user_id').eq('blocker_id', currentUserId),
+        supabase
+          .from('reports')
+          .select('id', { count: 'exact', head: true })
+          .eq('reporter_id', currentUserId),
+      ]);
+      if (!active) return;
+      setBlocked((blockRows ?? []).map((row) => row.blocked_user_id));
+      setReports(Array.from({ length: reportCount ?? 0 }));
+    })();
+    return () => {
+      active = false;
+    };
+  }, [currentUserId]);
   const [bioDraft, setBioDraft] = useState('');
-  const [chatDrafts, setChatDrafts] = useState({});
-  const [threads, setThreads] = useState({
-    Noor: [{ id: 1, text: 'Hey! Want to join the coffee walk?', own: false }],
-  });
-  const nextId = useRef(10);
-  const chatScroll = useRef(null);
   const [visitedHelp, setVisitedHelp] = useState(false);
   const close = () => setModal(null);
   const go = (next) => setTrail((prev) => [...prev, next]);
@@ -2673,15 +2773,9 @@ export default function CoucouSocial() {
     }
   }
   const inArea = (value) => !area || area === value;
-  const filteredPosts = posts.filter(
-    (p) =>
-      !blocked.includes(p.author) &&
-      inArea(p.area) &&
-      matches(query, p.content, p.topic, p.author, p.area),
-  );
   const filteredPeople = people.filter(
     (p) =>
-      !blocked.includes(p.name) &&
+      !blocked.includes(p.id) &&
       inArea(p.area) &&
       matches(query, p.name, p.bio, p.interest, p.area, p.languages),
   );
@@ -2689,59 +2783,10 @@ export default function CoucouSocial() {
     detail?.kind === 'profile'
       ? people.find((p) => p.name === detail.name)
       : undefined;
-  const activeChat =
-    detail?.kind === 'chat' || detail?.kind === 'match-chat'
-      ? detail.name
-      : null;
   const openHelp = (requestId) => {
     setVisitedHelp(true);
     go({ kind: 'help', requestId });
   };
-  function postCard(p) {
-    const liked = likes.includes(p.id);
-    return (
-      <View key={p.id} style={s.card}>
-        <Pressable accessibilityRole="button" onPress={() => profile(p.author)}>
-          <Text style={s.bold}>{p.author} ↗</Text>
-          <Text style={s.meta}>
-            {p.area} · {p.topic}
-          </Text>
-        </Pressable>
-        <Text style={s.body}>{p.content}</Text>
-        <View style={s.row}>
-          <Button
-            soft
-            label={(liked ? '♥ ' : '♡ ') + (p.likes + Number(liked))}
-            onPress={() =>
-              setLikes((prev) =>
-                prev.includes(p.id)
-                  ? prev.filter((id) => id !== p.id)
-                  : [...prev, p.id],
-              )
-            }
-          />
-          {p.author !== 'You' && (
-            <Button
-              soft
-              label="Message"
-              onPress={() => go({ kind: 'chat', name: p.author })}
-            />
-          )}
-        </View>
-      </View>
-    );
-  }
-  function send() {
-    if (!activeChat) return;
-    const text = (chatDrafts[activeChat] ?? '').trim();
-    if (!text) return;
-    const message = { id: nextId.current++, own: true, text };
-    setThreads((prev) => ({
-      ...prev,
-      [activeChat]: [...(prev[activeChat] ?? []), message],
-    }));
-    setChatDrafts((prev) => ({ ...prev, [activeChat]: '' }));
-  }
   return (
     <SafeAreaView style={s.page}>
       <View style={social.top}>
@@ -2792,53 +2837,6 @@ export default function CoucouSocial() {
           partnerName={detail.name}
           onBack={back}
         />
-      ) : activeChat ? (
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={social.chatHeading}>
-            <Text style={[s.section, { color: C.onAccent }]}>{activeChat}</Text>
-            <Button
-              soft
-              label="View profile"
-              onPress={() => profile(activeChat)}
-            />
-          </View>
-          <ScrollView
-            ref={chatScroll}
-            contentContainerStyle={s.content}
-            onContentSizeChange={() =>
-              chatScroll.current?.scrollToEnd({ animated: false })
-            }
-          >
-            {!threads[activeChat]?.length && (
-              <Text style={s.meta}>Say hello to {activeChat}.</Text>
-            )}
-            {(threads[activeChat] ?? []).map((m) => (
-              <View key={m.id} style={[social.bubble, m.own && social.mine]}>
-                <Text style={[s.body, social.bubbleText]}>{m.text}</Text>
-              </View>
-            ))}
-          </ScrollView>
-          <View style={social.composer}>
-            <TextInput
-              accessibilityLabel="Message"
-              style={[s.input, { flex: 1 }]}
-              value={chatDrafts[activeChat] ?? ''}
-              placeholderTextColor={C.placeholder}
-            placeholder="Write a message…"
-              onChangeText={(t) =>
-                setChatDrafts((prev) => ({ ...prev, [activeChat]: t }))
-              }
-            />
-            <Button
-              label="Send"
-              disabled={!chatDrafts[activeChat]?.trim()}
-              onPress={send}
-            />
-          </View>
-        </KeyboardAvoidingView>
       ) : !detail && tab === 'Services' ? (
         <PublicServices />
       ) : (
@@ -2908,12 +2906,12 @@ export default function CoucouSocial() {
                 {author ? (
                   <>
                     <Text style={s.bold}>
-                      {author.languages} · {author.interest}
+                      {author.languages || 'Languages not added yet'}
                     </Text>
-                    <Button
-                      label={'Message ' + author.name}
-                      onPress={() => go({ kind: 'chat', name: author.name })}
-                    />
+                    <Text style={s.meta}>
+                      You can message a volunteer once they offer to help with one of
+                      your requests.
+                    </Text>
                   </>
                 ) : (
                   <Button
@@ -2968,13 +2966,6 @@ export default function CoucouSocial() {
                     {notice}
                   </Text>
                 )}
-                <Text style={s.section}>Posts</Text>
-                {posts
-                  .filter((p) => p.author === (author?.name ?? 'You'))
-                  .map(postCard)}
-                {!author && !posts.some((p) => p.author === 'You') && (
-                  <Text style={s.body}>Your posts will appear here.</Text>
-                )}
                 {!author && (
                   <Text style={[s.meta, { color: '#C62828' }]}>
                     Blocked members: {blocked.length} · Reports sent:{' '}
@@ -2990,33 +2981,35 @@ export default function CoucouSocial() {
                   <Text style={s.heroTitle}>Around the block.</Text>
                 </View>
                 <View style={s.header}>
-                  <Text style={s.section}>Neighbourhood feed</Text>
+                  <Text style={s.section}>
+                    {currentProfile?.role === 'volunteer'
+                      ? 'People who need help'
+                      : 'Your requests'}
+                  </Text>
                   <Button
-                    label="+ Post"
-                    onPress={() => {
-                      setPostArea(area ?? areas[0]);
-                      setModal('post');
-                    }}
+                    label={
+                      currentProfile?.role === 'volunteer'
+                        ? 'Open board'
+                        : '+ Ask for help'
+                    }
+                    onPress={() => openHelp()}
                   />
                 </View>
-                {posts
-                  .filter((p) => !blocked.includes(p.author) && inArea(p.area))
-                  .map(postCard)}
-                <Button
-                  soft
-                  label="Community help board ↗"
-                  onPress={() => openHelp()}
+                <LatestRequests
+                  area={area}
+                  blocked={blocked}
+                  role={currentProfile?.role}
+                  onOpen={(requestId) => openHelp(requestId)}
                 />
               </>
             ) : tab === 'Discover' ? (
               <>
                 <Text style={s.title}>Discover</Text>
-                <Communities />
                 <TextInput
                   accessibilityLabel="Search"
                   style={s.input}
                   placeholderTextColor={C.placeholder}
-            placeholder="Search people, interests or posts"
+            placeholder="Search volunteers by name, area or language"
                   value={query}
                   onChangeText={setQuery}
                 />
@@ -3043,11 +3036,6 @@ export default function CoucouSocial() {
                 {!filteredPeople.length && !peopleLoading && !peopleError && (
                   <Text style={s.body}>No people match this search.</Text>
                 )}
-                <Text style={s.section}>Posts</Text>
-                {filteredPosts.map(postCard)}
-                {!filteredPosts.length && (
-                  <Text style={s.body}>No matching posts.</Text>
-                )}
               </>
             ) : (
               <>
@@ -3061,25 +3049,6 @@ export default function CoucouSocial() {
                   onRefresh={refreshInbox}
                   reloadKey={inboxReloadKey}
                 />
-                {Object.entries(threads)
-                  .filter(([name]) => !blocked.includes(name))
-                  .sort(
-                    (a, b) =>
-                      b[1][b[1].length - 1].id - a[1][a[1].length - 1].id,
-                  )
-                  .map(([name, list]) => (
-                    <Pressable
-                      accessibilityRole="button"
-                      key={name}
-                      style={s.card}
-                      onPress={() => go({ kind: 'chat', name })}
-                    >
-                      <Text style={s.cardTitle}>{name} ↗</Text>
-                      <Text numberOfLines={1} style={s.body}>
-                        {list[list.length - 1].text}
-                      </Text>
-                    </Pressable>
-                  ))}
                 <Button
                   soft
                   label="Refresh inbox"
@@ -3177,48 +3146,6 @@ export default function CoucouSocial() {
                     />
                   ))}
                 </>
-              ) : modal === 'post' ? (
-                <>
-                  <Text style={s.title}>Share a post</Text>
-                  <TextInput
-                    accessibilityLabel="Post text"
-                    multiline
-                    style={s.input}
-                    placeholderTextColor={C.placeholder}
-            placeholder="What’s happening nearby?"
-                    value={postText}
-                    onChangeText={setPostText}
-                    maxLength={1200}
-                  />
-                  <View style={s.row}>
-                    {areas.map((a) => (
-                      <Button
-                        label={a}
-                        soft={a !== postArea}
-                        key={a}
-                        onPress={() => setPostArea(a)}
-                      />
-                    ))}
-                  </View>
-                  <Button
-                    label="Publish"
-                    disabled={!postText.trim()}
-                    onPress={() => {
-                      const p = {
-                        id: nextId.current++,
-                        author: 'You',
-                        content: postText.trim(),
-                        area: postArea,
-                        topic: 'Community',
-                        likes: 0,
-                      };
-                      setPosts((prev) => [p, ...prev]);
-                      if (area) setArea(postArea);
-                      setPostText('');
-                      close();
-                    }}
-                  />
-                </>
               ) : modal === 'rules' ? (
                 <>
                   <Text style={s.title}>Community rules · v1.0</Text>
@@ -3254,13 +3181,20 @@ export default function CoucouSocial() {
                   <Button
                     label="Submit report"
                     disabled={!reportReason.trim()}
-                    onPress={() => {
-                      if (!reportReason.trim()) return;
-                      setReports((prev) => [
-                        ...prev,
-                        { name: author.name, reason: reportReason.trim() },
-                      ]);
-                      setNotice('Report recorded in this demo.');
+                    onPress={async () => {
+                      if (!reportReason.trim() || !currentUserId || !author.id) return;
+                      const { error: reportError } = await supabase.from('reports').insert({
+                        reporter_id: currentUserId,
+                        reported_user_id: author.id,
+                        category: 'other',
+                        details: reportReason.trim(),
+                      });
+                      if (reportError) {
+                        setNotice(getErrorMessage(reportError, 'Could not send your report.'));
+                      } else {
+                        setReports((prev) => [...prev, author.id]);
+                        setNotice('Report sent. Our team will review it.');
+                      }
                       close();
                     }}
                   />
@@ -3269,15 +3203,23 @@ export default function CoucouSocial() {
                 <>
                   <Text style={s.title}>Block {author.name}?</Text>
                   <Text style={s.body}>
-                    Their posts, profile and conversation will be hidden from
-                    your account.
+                    Their profile will be hidden, and you will not be able to chat
+                    with each other.
                   </Text>
                   <Button
                     label="Confirm block"
-                    onPress={() => {
-                      setBlocked((prev) => [
-                        ...new Set([...prev, author.name]),
-                      ]);
+                    onPress={async () => {
+                      if (!currentUserId || !author.id) return;
+                      const { error: blockError } = await supabase.from('blocks').upsert(
+                        { blocker_id: currentUserId, blocked_user_id: author.id },
+                        { onConflict: 'blocker_id,blocked_user_id', ignoreDuplicates: true },
+                      );
+                      if (blockError) {
+                        setNotice(getErrorMessage(blockError, 'Could not block this user.'));
+                        close();
+                        return;
+                      }
+                      setBlocked((prev) => [...new Set([...prev, author.id])]);
                       close();
                       setTrail([]);
                       setTab('Feed');

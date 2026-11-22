@@ -1,11 +1,10 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, Slot, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
 import AuthScreen from '@/screens/auth';
 import { useCoucouTheme } from '@/theme/coucou';
 import { supabase } from '../../lib/supabase';
@@ -91,7 +90,7 @@ export default function TabLayout() {
       {checkingSession ? (
         <View style={[styles.loading, { backgroundColor: C.page }]} />
       ) : session ? (
-        <AppTabs />
+        <Slot />
       ) : (
         <AuthScreen initialError={authError} onClearError={() => setAuthError(null)} />
       )}
