@@ -156,3 +156,9 @@ begin
   limit 3;
 end;
 $$;
+
+-- This project does not grant new tables to signed-in users automatically.
+grant select, insert, update, delete on table public.match_locations to authenticated;
+revoke all on function public.match_location_status(uuid) from public, anon;
+grant execute on function public.match_location_status(uuid) to authenticated;
+grant execute on function public.suggest_meeting_places(uuid) to authenticated;

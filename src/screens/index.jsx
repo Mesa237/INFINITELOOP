@@ -647,8 +647,12 @@ function MeetPanel({ matchId, userId, isVolunteer, partnerName, onProposed }) {
       }
       setLocationState('error');
       // A Supabase error has a message but is not an Error instance.
-      if (locationError && !(locationError instanceof Error) && locationError.message) {
-        setError('Your location was found but could not be saved: ' + locationError.message);
+      if (locationError?.message) {
+        setError(
+          (locationError instanceof Error
+            ? 'Location error: '
+            : 'Your location was found but could not be saved: ') + locationError.message,
+        );
       }
     }
   }, [matchId, userId]);
