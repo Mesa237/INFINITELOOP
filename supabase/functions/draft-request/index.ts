@@ -84,6 +84,7 @@ const draftTool = {
       missing_info: {
         type: 'array',
         items: { type: 'string' },
+        maxItems: 2,
         description:
           'Up to 2 short questions in the post language about details a helper would need but the user did not give, such as when or where. Empty if nothing important is missing.',
       },
@@ -125,10 +126,17 @@ Deno.serve(async (req) => {
       max_tokens: 800,
       system:
         `You help newcomers and seniors in Montréal ask neighbours for everyday help on the CouCouMTL app. ` +
-        `The user may write in any language. Write the post in ${target}, in a warm, plain, respectful tone, ` +
-        `as the user speaking ("I need..."). Keep all facts the user gave and never add new ones. ` +
-        `Remove private details a stranger should not see in a public post (full street address, phone numbers, ` +
+        `The user may write in any language. Write EVERY text field (title, description and missing_info) in ${target} only, ` +
+        `even if the user wrote in another language. Use a warm, plain, respectful tone, as the user speaking ("I need..."). ` +
+        `Keep all facts the user gave and never add new ones. Never write placeholders such as <UNKNOWN> or [neighbourhood]; ` +
+        `if something is not known, leave it out of the description and ask about it in missing_info instead. ` +
+        `Remove private details a stranger should not see in a public post (street address, apartment number, phone numbers, ` +
         `health card or ID numbers); keep only the neighbourhood. Choose the closest help_type. ` +
+        `detected_language must be the two-letter ISO 639-1 code of the user's message, for example tr, ar, fr, en. ` +
+        `urgent is true ONLY when someone may be in danger right now: a medical emergency happening now, someone hurt or ` +
+        `unresponsive, violence, fire, or a missing person. Planned needs are never urgent, including medical appointments, ` +
+        `forms with deadlines, or needing a ride later today or tomorrow. ` +
+        `missing_info has at most 2 short questions, only for details a helper truly needs (usually when or where). ` +
         `Always answer by calling save_draft.`,
       tools: [draftTool],
       tool_choice: { type: 'tool', name: 'save_draft' },
@@ -152,6 +160,9 @@ Deno.serve(async (req) => {
   draft.needed_skills = Array.isArray(draft.needed_skills)
     ? draft.needed_skills.filter((k: string) => (SKILLS as readonly string[]).includes(k)).slice(0, 4)
     : [];
+  draft.missing_info = Array.isArray(draft.missing_info) ? draft.missing_info.slice(0, 2) : [];
+  draft.detected_language = String(draft.detected_language ?? '').trim().toLowerCase().slice(0, 2);
+  draft.description = draft.description.replace(/\s*[^.!?]*<[^>]+>[^.!?]*[.!?]?/g, '').trim();
   draft.post_language = postLanguage;
 
   return json({ draft });
