@@ -2753,7 +2753,7 @@ export default function CoucouSocial() {
                 <Button
                   soft
                   label="Community help board ↗"
-                  onPress={openHelp}
+                  onPress={() => openHelp()}
                 />
               </>
             ) : tab === 'Discover' ? (
