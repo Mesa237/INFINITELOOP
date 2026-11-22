@@ -1295,16 +1295,22 @@ function MatchConversation({ matchId, partnerName, onBack }) {
           />
         </View>
         {meetOpen && (
-          <MeetPanel
-            matchId={matchId}
-            userId={userId}
-            isVolunteer={isVolunteer}
-            partnerName={partnerName}
-            onProposed={(row) => {
-              setProposals((previous) => upsertProposal(previous, row));
-              setMeetOpen(false);
-            }}
-          />
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={s.content}
+            keyboardShouldPersistTaps="handled"
+          >
+            <MeetPanel
+              matchId={matchId}
+              userId={userId}
+              isVolunteer={isVolunteer}
+              partnerName={partnerName}
+              onProposed={(row) => {
+                setProposals((previous) => upsertProposal(previous, row));
+                setMeetOpen(false);
+              }}
+            />
+          </ScrollView>
         )}
         {!!meetError && (
           <Text accessibilityLiveRegion="polite" style={{ color: C.error }}>
@@ -1319,6 +1325,7 @@ function MatchConversation({ matchId, partnerName, onBack }) {
         )}
         <ScrollView
           ref={scrollRef}
+          style={meetOpen ? { display: 'none' } : { flex: 1 }}
           contentContainerStyle={s.content}
           onContentSizeChange={() =>
             scrollRef.current?.scrollToEnd({ animated: true })
@@ -1357,7 +1364,7 @@ function MatchConversation({ matchId, partnerName, onBack }) {
             ),
           )}
         </ScrollView>
-        <View style={social.composer}>
+        <View style={[social.composer, meetOpen && { display: 'none' }]}>
           <TextInput
             accessibilityLabel="Write a message"
             style={[s.input, { flex: 1 }]}
