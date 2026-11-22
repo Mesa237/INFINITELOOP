@@ -1472,7 +1472,7 @@ function PosterAvatar({ name, url, theme }) {
   );
 }
 
-function RequestPoster({ row, person, index, isVolunteer, onOpen }) {
+function RequestPoster({ row, person, index, isVolunteer, onOpen, matchers }) {
   const theme = POSTER_THEMES[index % POSTER_THEMES.length];
   const [small, big] = POSTER_HOOKS[row.help_type] ?? POSTER_HOOKS.other;
   const firstName = (person?.display_name || 'A neighbour').split(/\s+/)[0];
@@ -1531,6 +1531,39 @@ function RequestPoster({ row, person, index, isVolunteer, onOpen }) {
       <View style={{ alignItems: index % 2 ? 'flex-start' : 'flex-end' }}>
         <PosterAvatar name={person?.display_name} url={person?.avatar_url} theme={theme} />
       </View>
+
+      {!isVolunteer && !!matchers?.length && (
+        <View style={{ gap: 6 }}>
+          <View style={{ flexDirection: 'row' }}>
+            {matchers.slice(0, 4).map((m, i) => (
+              <Image
+                key={m.volunteer_id}
+                accessibilityLabel={m.display_name + ' profile picture'}
+                source={m.avatar_url ? { uri: m.avatar_url } : undefined}
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  borderWidth: 2,
+                  borderColor: theme.bg,
+                  backgroundColor: theme.soft,
+                  marginLeft: i ? -10 : 0,
+                }}
+              />
+            ))}
+          </View>
+          <Text style={{ color: theme.ink, fontWeight: '800', fontSize: 13 }}>
+            {matchers.length === 1
+              ? matchers[0].display_name.split(/\s+/)[0] + ' has the skills you need'
+              : matchers
+                  .slice(0, 2)
+                  .map((m) => m.display_name.split(/\s+/)[0])
+                  .join(', ') +
+                (matchers.length > 2 ? ' & ' + (matchers.length - 2) + ' more' : '') +
+                ' have the skills you need'}
+          </Text>
+        </View>
+      )}
 
       <View style={{ gap: 4 }}>
         <Text
@@ -1877,6 +1910,7 @@ function LatestRequests({ area, blocked, role, onOpen, mode }) {
   const { C } = useCoucouTheme();
   const [rows, setRows] = useState([]);
   const [people, setPeople] = useState({});
+  const [matchers, setMatchers] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   // mode 'open' = requests to help with, 'mine' = my own requests.
@@ -1922,9 +1956,22 @@ function LatestRequests({ area, blocked, role, onOpen, mode }) {
             .in('id', ids);
           byId = Object.fromEntries((profiles ?? []).map((p) => [p.id, p]));
         }
+        let matchesByRequest = {};
+        if (!isVolunteer) {
+          const openRows = (data ?? []).filter((row) => row.status === 'open');
+          const results = await Promise.all(
+            openRows.map((row) =>
+              supabase.rpc('matching_volunteers', { target_request_id: row.id }),
+            ),
+          );
+          openRows.forEach((row, i) => {
+            matchesByRequest[row.id] = results[i].data ?? [];
+          });
+        }
         if (active) {
           setRows(data ?? []);
           setPeople(byId);
+          setMatchers(matchesByRequest);
         }
       } catch (loadError) {
         if (active) setError(getErrorMessage(loadError, 'Could not load requests.'));
@@ -1959,7 +2006,7 @@ function LatestRequests({ area, blocked, role, onOpen, mode }) {
       </Text>
     );
   }
-  return visible.map((row, index) => (
+  const poster = (row, index) => (
     <RequestPoster
       key={row.id}
       row={row}
@@ -1967,8 +2014,25 @@ function LatestRequests({ area, blocked, role, onOpen, mode }) {
       index={index}
       isVolunteer={isVolunteer}
       onOpen={onOpen}
+      matchers={matchers[row.id]}
     />
-  ));
+  );
+  if (!isVolunteer) return visible.map(poster);
+  // Volunteers: requests that need your skills come first.
+  const skillMatches = visible.filter((row) => row.matched_skills?.length);
+  const others = visible.filter((row) => !row.matched_skills?.length);
+  return (
+    <>
+      {!!skillMatches.length && (
+        <Text style={s.section}>Matches your skills</Text>
+      )}
+      {skillMatches.map(poster)}
+      {!!others.length && !!skillMatches.length && (
+        <Text style={s.section}>Other requests nearby</Text>
+      )}
+      {others.map((row, i) => poster(row, skillMatches.length + i))}
+    </>
+  );
 }
 
 function CommunityBoard({
