@@ -546,9 +546,9 @@ const formatMeetAt = (iso) =>
       })
     : 'Time to confirm';
 const MEET_OPTION_LABELS = {
-  member: 'Member’s location',
+  member: 'Near the member',
   midpoint: 'Fair midpoint',
-  volunteer: 'Volunteer’s chosen place',
+  volunteer: 'Near the volunteer',
 };
 const PROPOSAL_FIELDS =
   'id, match_id, proposed_by, option, place_name, public_place_id, lat, lng, meet_at, status, created_at';
@@ -596,25 +596,10 @@ async function shareMatchLocation(matchId, userId) {
   return point;
 }
 
-async function placeNameFor(point) {
-  try {
-    const [address] = await Location.reverseGeocodeAsync({
-      latitude: point.lat,
-      longitude: point.lng,
-    });
-    if (!address) return '';
-    const street = [address.streetNumber, address.street].filter(Boolean).join(' ');
-    return [street || address.name, address.city].filter(Boolean).join(', ');
-  } catch {
-    return '';
-  }
-}
-
 function MeetPanel({ matchId, userId, isVolunteer, partnerName, onProposed }) {
   const { C } = useCoucouTheme();
   const s = useS();
   const [option, setOption] = useState('');
-  const [placeName, setPlaceName] = useState('');
   const [myPoint, setMyPoint] = useState(null);
   const [locationState, setLocationState] = useState('asking'); // asking | shared | denied | error
   const [partnerShared, setPartnerShared] = useState(false);
@@ -630,8 +615,9 @@ function MeetPanel({ matchId, userId, isVolunteer, partnerName, onProposed }) {
 
   const options = isVolunteer ? ['midpoint', 'volunteer'] : ['member', 'midpoint'];
   const optionLabels = isVolunteer
-    ? ['Fair midpoint', 'My chosen place']
-    : ['My location', 'Fair midpoint'];
+    ? ['Fair midpoint', 'Near me']
+    : ['Near me', 'Fair midpoint'];
+  const [nearPlaces, setNearPlaces] = useState([]);
 
   const askForLocation = useCallback(async () => {
     if (!userId) return;
@@ -703,9 +689,30 @@ function MeetPanel({ matchId, userId, isVolunteer, partnerName, onProposed }) {
     setOption(next);
     setError('');
     setPickedPlace(null);
-    if (next === 'member' && myPoint && !placeName) {
-      setPlaceName(await placeNameFor(myPoint));
+    if (next === 'midpoint' || !myPoint) return;
+    // "Near me": the closest public places, worked out on this phone.
+    // Your own position is never put in the proposal.
+    const { data, error: placesError } = await supabase
+      .from('public_places')
+      .select('id, name, kind, lat, lng');
+    if (placesError) {
+      setError('Could not load public places. Try again.');
+      return;
     }
+    const km = (lat, lng) => {
+      const rad = (d) => (d * Math.PI) / 180;
+      const a =
+        Math.sin(rad(lat - myPoint.lat) / 2) ** 2 +
+        Math.cos(rad(myPoint.lat)) * Math.cos(rad(lat)) *
+          Math.sin(rad(lng - myPoint.lng) / 2) ** 2;
+      return 6371 * 2 * Math.asin(Math.sqrt(a));
+    };
+    setNearPlaces(
+      (data ?? [])
+        .map((p) => ({ ...p, place_id: p.id, my_km: km(p.lat, p.lng) }))
+        .sort((a, b) => a.my_km - b.my_km)
+        .slice(0, 3),
+    );
   }
 
   async function send() {
@@ -727,21 +734,15 @@ function MeetPanel({ matchId, userId, isVolunteer, partnerName, onProposed }) {
         lat: pickedPlace.lat,
         lng: pickedPlace.lng,
       });
-    } else if (option === 'member') {
-      if (!myPoint) return;
-      Object.assign(row, {
-        place_name: placeName.trim() || 'My location',
-        lat: myPoint.lat,
-        lng: myPoint.lng,
-      });
     } else {
-      row.place_name = placeName.trim();
-      try {
-        const [found] = await Location.geocodeAsync(row.place_name + ', Montréal, QC');
-        if (found) Object.assign(row, { lat: found.latitude, lng: found.longitude });
-      } catch {
-        // No coordinates: Open in Maps searches by the place name instead.
-      }
+      // Near me: a public place close to you, never your own address.
+      if (!pickedPlace) return;
+      Object.assign(row, {
+        place_name: pickedPlace.name,
+        public_place_id: pickedPlace.place_id,
+        lat: pickedPlace.lat,
+        lng: pickedPlace.lng,
+      });
     }
     setBusy(true);
     setError('');
@@ -760,12 +761,7 @@ function MeetPanel({ matchId, userId, isVolunteer, partnerName, onProposed }) {
     }
   }
 
-  const placeReady =
-    option === 'midpoint'
-      ? !!pickedPlace
-      : option === 'member'
-        ? !!myPoint
-        : placeName.trim().length >= 2;
+  const placeReady = !!pickedPlace;
   const canSend = !!option && placeReady && !!day && hour !== '' && !busy;
 
   return (
@@ -803,35 +799,35 @@ function MeetPanel({ matchId, userId, isVolunteer, partnerName, onProposed }) {
         value={option}
         change={chooseOption}
       />
-      {option === 'member' && (
-        <>
-          <Text style={s.meta}>
-            {myPoint
-              ? 'Your current location will be shared with ' + partner + ' in this proposal.'
-              : 'Allow location to use this option.'}
-          </Text>
-          <TextInput
-            accessibilityLabel="Place name"
-            style={s.input}
-            placeholderTextColor={C.placeholder}
-            placeholder="Name for this place, e.g. My home"
-            value={placeName}
-            onChangeText={setPlaceName}
-            maxLength={200}
-          />
-        </>
-      )}
-      {option === 'volunteer' && (
-        <TextInput
-          accessibilityLabel="Place name"
-          style={s.input}
-          placeholderTextColor={C.placeholder}
-          placeholder="Place name, e.g. Atwater Library"
-          value={placeName}
-          onChangeText={setPlaceName}
-          maxLength={200}
-        />
-      )}
+      {(option === 'member' || option === 'volunteer') &&
+        (!myPoint ? (
+          <Text style={s.meta}>Allow location to see public places near you.</Text>
+        ) : (
+          <>
+            <Text style={s.meta}>
+              Public places closest to you. Your address is never shared.
+            </Text>
+            {nearPlaces.map((place) => {
+              const picked = pickedPlace?.place_id === place.place_id;
+              return (
+                <Pressable
+                  key={place.place_id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: picked }}
+                  onPress={() => setPickedPlace(place)}
+                  style={[s.card, picked && { borderColor: C.primary, borderWidth: 2 }]}
+                >
+                  <Text style={s.bold}>
+                    {picked ? <Feather name="check" size={15} color={C.text} /> : null}
+                    {picked ? ' ' : ''}
+                    {place.name}
+                  </Text>
+                  <Text style={s.meta}>{place.my_km.toFixed(1)} km from you</Text>
+                </Pressable>
+              );
+            })}
+          </>
+        ))}
       {option === 'midpoint' &&
         (locationState !== 'shared' ? (
           <Text style={s.meta}>Share your location first.</Text>
