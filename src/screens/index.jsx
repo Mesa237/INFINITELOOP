@@ -23,7 +23,7 @@ import {
 } from '../theme/coucou';
 import { setActivePortal } from '../../lib/portal';
 const areas = ['Downtown', 'Le Plateau', 'Verdun'];
-const people = [
+const samplePeople = [
   {
     name: 'Camille',
     initials: 'CM',
@@ -1768,6 +1768,9 @@ export default function CoucouSocial() {
   const [reportReason, setReportReason] = useState('');
   const [notice, setNotice] = useState('');
   const [posts, setPosts] = useState(initialPosts);
+  const [people, setPeople] = useState(samplePeople);
+  const [peopleLoading, setPeopleLoading] = useState(false);
+  const [peopleError, setPeopleError] = useState('');
   const [likes, setLikes] = useState([]);
   const [query, setQuery] = useState('');
   const [postText, setPostText] = useState('');
@@ -1848,6 +1851,65 @@ export default function CoucouSocial() {
       active = false;
     };
   }, []);
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    let active = true;
+    async function loadDiscoverPeople() {
+      setPeopleLoading(true);
+      setPeopleError('');
+      try {
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, display_name, role, languages, neighborhood, bio')
+          .in('role', ['volunteer', 'both'])
+          .neq('id', currentUserId)
+          .order('display_name');
+        if (profilesError) throw profilesError;
+
+        if (active) {
+          const discoverProfiles = (profiles ?? []).map((profile) => ({
+            id: profile.id,
+            name: profile.display_name,
+            initials: profile.display_name
+              .split(/\s+/)
+              .map((part) => part[0] ?? '')
+              .join('')
+              .slice(0, 2)
+              .toUpperCase(),
+            area: profile.neighborhood || 'Montréal',
+            role:
+              profile.role === 'both' ? 'Member & volunteer' : 'Volunteer',
+            languages: profile.languages.join(' · '),
+            interest: profile.role === 'both' ? 'Member & volunteer' : 'Volunteer',
+            bio: profile.bio ?? '',
+          }));
+          const profileNames = new Set(
+            discoverProfiles.map((profile) => profile.name.toLowerCase()),
+          );
+          setPeople([
+            ...samplePeople.filter(
+              (person) => !profileNames.has(person.name.toLowerCase()),
+            ),
+            ...discoverProfiles,
+          ]);
+        }
+      } catch (loadError) {
+        if (active) {
+          setPeopleError(
+            getErrorMessage(loadError, 'Could not load volunteers. Try again.'),
+          );
+        }
+      } finally {
+        if (active) setPeopleLoading(false);
+      }
+    }
+
+    loadDiscoverPeople();
+    return () => {
+      active = false;
+    };
+  }, [currentUserId]);
   const [bioDraft, setBioDraft] = useState('');
   const [chatDrafts, setChatDrafts] = useState({});
   const [threads, setThreads] = useState({
@@ -2322,20 +2384,26 @@ export default function CoucouSocial() {
                   onChangeText={setQuery}
                 />
                 <Text style={s.section}>People</Text>
+                <Text style={s.meta}>Volunteers and people with both roles</Text>
+                {peopleError ? (
+                  <Text style={[s.body, { color: '#C62828' }]}>{peopleError}</Text>
+                ) : peopleLoading ? (
+                  <Text style={s.meta}>Loading volunteers…</Text>
+                ) : null}
                 {filteredPeople.map((p) => (
                   <Pressable
-                    key={p.name}
+                    key={p.id || p.name}
                     accessibilityRole="button"
                     style={s.card}
                     onPress={() => profile(p.name)}
                   >
                     <Text style={s.cardTitle}>{p.name} ↗</Text>
                     <Text style={s.meta}>
-                      {p.area} · {p.interest}
+                      {p.area} · {p.role}
                     </Text>
                   </Pressable>
                 ))}
-                {!filteredPeople.length && (
+                {!filteredPeople.length && !peopleLoading && !peopleError && (
                   <Text style={s.body}>No people match this search.</Text>
                 )}
                 <Text style={s.section}>Posts</Text>
