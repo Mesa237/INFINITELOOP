@@ -1707,6 +1707,7 @@ const SKILL_OPTIONS = [
   ['companionship', 'Company & visits'],
   ['childcare', 'Children & school'],
   ['pet_care', 'Pet care'],
+  ['other', 'Other'],
 ];
 const HELP_TYPE_LABELS = {
   appointments: 'Appointments',
@@ -1760,6 +1761,7 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
   const [helpTypes, setHelpTypes] = useState([]);
   const [languages, setLanguages] = useState(initialLanguages ?? []);
   const [talents, setTalents] = useState('');
+  const [otherSkills, setOtherSkills] = useState('');
   const [experience, setExperience] = useState('');
   const [availability, setAvailability] = useState('');
   const [matches, setMatches] = useState(null);
@@ -1774,7 +1776,7 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
     (async () => {
       const { data } = await supabase
         .from('volunteer_details')
-        .select('skills, profession, experience, availability, help_types, talents')
+        .select('skills, profession, experience, availability, help_types, talents, other_skills')
         .eq('user_id', userId)
         .maybeSingle();
       if (!active) return;
@@ -1785,6 +1787,7 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
         setAvailability(data.availability ?? '');
         setHelpTypes(data.help_types ?? []);
         setTalents(data.talents ?? '');
+        setOtherSkills(data.other_skills ?? '');
       }
       setLoading(false);
       loadMatches();
@@ -1806,6 +1809,7 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
           help_types: helpTypes,
           profession: profession.trim() || null,
           talents: talents.trim() || null,
+          other_skills: skills.includes('other') ? otherSkills.trim() || null : null,
           experience: experience.trim() || null,
           availability: availability.trim() || null,
         },
@@ -1866,6 +1870,25 @@ function VolunteerDashboard({ userId, languages: initialLanguages, onSaved }) {
         change={setSkills}
         max={15}
       />
+      {skills.includes('other') && (
+        <View style={{ gap: 6 }}>
+          <Text style={s.bold}>Other skills</Text>
+          <Text style={s.meta}>
+            For niche needs. Separate with commas. Requests that mention these words
+            will find you.
+          </Text>
+          <TextInput
+            accessibilityLabel="Other skills"
+            style={[s.input, { minHeight: 70 }]}
+            multiline
+            value={otherSkills}
+            onChangeText={setOtherSkills}
+            placeholder="e.g. Sign language, sewing, bike repair, tax returns"
+            placeholderTextColor={C.placeholder}
+            maxLength={300}
+          />
+        </View>
+      )}
 
       <MultiChoice
         title="I'm willing to help with"
